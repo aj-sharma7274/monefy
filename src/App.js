@@ -1,7 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
 
-// ── Supabase config ──
 const SUPABASE_URL = "https://lwbhllwznsqniwtbrhqc.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx3YmhsbHd6bnNxbml3dGJyaHFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5MjI2MTUsImV4cCI6MjA5NDQ5ODYxNX0._DCPCFvwh4E-qSFCg4pLUmm17ORtFcyO80uM_tl5YaM";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -9,74 +8,216 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const PIE_COLORS = ["#00e5cc","#ff4d8d","#ffb830","#00d68f","#a78bfa","#60a5fa","#f97316","#34d399","#fb7185","#818cf8","#fbbf24","#4ade80"];
+const YEARS = [2024, 2025, 2026, 2027];
 
 const fmt = (n) => "₹" + Math.round(n).toLocaleString("en-IN");
 const pct = (a, b) => b === 0 ? 0 : Math.min(Math.round((a / b) * 100), 999);
-
-const S = {
-  app: { display:"flex", minHeight:"100vh", background:"#07091a", color:"#e8eaf6", fontFamily:"system-ui,sans-serif" },
-  sidebar: { width:224, background:"#0d1130", borderRight:"1px solid rgba(255,255,255,0.07)", display:"flex", flexDirection:"column", position:"fixed", top:0, left:0, height:"100vh", zIndex:100 },
-  logoWrap: { padding:"24px 20px 20px", borderBottom:"1px solid rgba(255,255,255,0.07)" },
-  logoText: { fontSize:22, fontWeight:800, background:"linear-gradient(135deg,#00e5cc,#ff4d8d)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" },
-  logoSub: { fontSize:11, color:"#5a6490", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" },
-  navItem: (a) => ({ display:"flex", alignItems:"center", gap:11, padding:"11px 20px", cursor:"pointer", color:a?"#00e5cc":"#9ba5c9", fontSize:13.5, fontWeight:500, background:a?"rgba(0,229,204,0.08)":"transparent", borderLeft:a?"3px solid #00e5cc":"3px solid transparent", transition:"all .15s" }),
-  main: { marginLeft:224, padding:"28px 32px", flex:1, minHeight:"100vh", paddingBottom:80 },
-  topbar: { display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:24, flexWrap:"wrap", gap:10 },
-  h2: { fontSize:22, fontWeight:700 },
-  sel: { background:"#131840", border:"1px solid rgba(255,255,255,0.1)", color:"#e8eaf6", padding:"7px 12px", borderRadius:8, fontSize:13, cursor:"pointer", outline:"none" },
-  grid4: { display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(155px,1fr))", gap:14, marginBottom:22 },
-  card: { background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"18px 20px" },
-  cardLabel: { fontSize:11, color:"#5a6490", textTransform:"uppercase", letterSpacing:".8px", marginBottom:8 },
-  cardVal: (c) => ({ fontSize:22, fontWeight:700, color:c }),
-  cardSub: { fontSize:11, color:"#5a6490", marginTop:4 },
-  sec: { background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 24px", marginBottom:18 },
-  secTitle: { fontSize:11, fontWeight:600, color:"#5a6490", textTransform:"uppercase", letterSpacing:".8px", marginBottom:14 },
-  inp: { background:"#131840", border:"1px solid rgba(255,255,255,0.1)", color:"#e8eaf6", padding:"10px 14px", borderRadius:9, fontSize:14, outline:"none", fontFamily:"inherit", width:"100%", boxSizing:"border-box" },
-  btnP: { padding:"10px 22px", borderRadius:9, border:"none", cursor:"pointer", fontSize:14, fontWeight:600, background:"linear-gradient(135deg,#00e5cc,#00b8a4)", color:"#07091a" },
-  btnD: { padding:"5px 10px", borderRadius:7, border:"1px solid rgba(255,77,109,.3)", cursor:"pointer", fontSize:12, background:"rgba(255,77,109,.1)", color:"#ff4d6d" },
-  btnG: { padding:"10px 18px", borderRadius:9, border:"1px solid rgba(255,255,255,.1)", cursor:"pointer", fontSize:13, background:"rgba(255,255,255,.04)", color:"#9ba5c9" },
-  tbl: { width:"100%", borderCollapse:"collapse", fontSize:13.5 },
-  th: { fontSize:11, color:"#5a6490", textTransform:"uppercase", letterSpacing:".7px", padding:"8px 10px", textAlign:"left", borderBottom:"1px solid rgba(255,255,255,.08)" },
-  td: { padding:"10px 10px", borderBottom:"1px solid rgba(255,255,255,.04)", color:"#9ba5c9" },
-  chip: { display:"inline-block", background:"rgba(255,255,255,.07)", color:"#9ba5c9", borderRadius:5, padding:"2px 8px", fontSize:11 },
-  pbg: { height:6, background:"rgba(255,255,255,.07)", borderRadius:99, overflow:"hidden", marginTop:5 },
-  pfill: (p,over) => ({ height:"100%", width:`${Math.min(p,100)}%`, background:over?"#ff4d6d":p>80?"#ffb830":"#00e5cc", borderRadius:99, transition:"width .5s" }),
+const timeAgo = (ts) => {
+  const s = Math.floor((Date.now() - new Date(ts)) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s/60) + "m ago";
+  if (s < 86400) return Math.floor(s/3600) + "h ago";
+  return Math.floor(s/86400) + "d ago";
 };
 
-// ── SVG Bar Chart ──
-function BarChart({ labels, datasets, height=260 }) {
-  const maxVal = Math.max(...datasets.flatMap(d=>d.data), 1);
-  const barW = Math.max(6, Math.min(22, Math.floor(480/labels.length/datasets.length - 3)));
-  const groupW = barW*datasets.length+4;
-  const [pL,pB,pT,pR] = [68,48,16,16];
-  const W = Math.max(480, labels.length*(groupW+8)+pL+pR);
-  const cH = height-pT-pB;
+const CSS = `
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #07091a; color: #e8eaf6; font-family: system-ui, sans-serif; }
+  input, select, button, textarea { font-family: inherit; }
+  input[type=number]::-webkit-inner-spin-button { opacity: 1; }
+
+  .mf-app { display: flex; min-height: 100vh; }
+
+  .mf-sidebar {
+    width: 220px; background: #0d1130;
+    border-right: 1px solid rgba(255,255,255,.07);
+    display: flex; flex-direction: column;
+    position: fixed; top: 0; left: 0; height: 100vh; z-index: 200;
+    transition: transform .25s;
+  }
+  .mf-logo-wrap { padding: 22px 18px 18px; border-bottom: 1px solid rgba(255,255,255,.07); }
+  .mf-logo {
+    font-size: 21px; font-weight: 800;
+    background: linear-gradient(135deg,#00e5cc,#ff4d8d);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    display: inline-block;
+  }
+  .mf-logo-sub { font-size: 11px; color: #5a6490; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mf-nav { flex: 1; padding: 10px 0; overflow-y: auto; }
+  .mf-nav-item {
+    display: flex; align-items: center; gap: 11px;
+    padding: 11px 18px; cursor: pointer; font-size: 13.5px; font-weight: 500;
+    color: #9ba5c9; border-left: 3px solid transparent; transition: all .15s;
+  }
+  .mf-nav-item:hover { background: rgba(255,255,255,.03); color: #e8eaf6; }
+  .mf-nav-item.active { background: rgba(0,229,204,.08); color: #00e5cc; border-left-color: #00e5cc; }
+  .mf-nav-icon { font-size: 16px; width: 20px; text-align: center; }
+  .mf-signout { padding: 14px 18px; border-top: 1px solid rgba(255,255,255,.06); display: flex; align-items: center; gap: 10px; cursor: pointer; color: #5a6490; font-size: 13px; }
+  .mf-signout:hover { color: #ff4d6d; }
+
+  .mf-hamburger {
+    display: none; position: fixed; top: 14px; left: 14px; z-index: 300;
+    background: #0d1130; border: 1px solid rgba(255,255,255,.1);
+    border-radius: 8px; padding: 8px 10px; cursor: pointer; font-size: 18px; color: #e8eaf6;
+  }
+  .mf-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 150; }
+
+  .mf-main { margin-left: 220px; padding: 28px 30px 100px; flex: 1; min-height: 100vh; }
+
+  .mf-bottom-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; background: #0d1130; border-top: 1px solid rgba(255,255,255,.07); z-index: 200; padding: 6px 0; }
+  .mf-bottom-nav-inner { display: flex; justify-content: space-around; }
+  .mf-bottom-item { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 4px; cursor: pointer; color: #5a6490; font-size: 8px; transition: color .15s; min-width: 0; }
+  .mf-bottom-item.active { color: #00e5cc; }
+  .mf-bottom-icon { font-size: 18px; }
+
+  .mf-topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; flex-wrap: wrap; gap: 10px; }
+  .mf-topbar h2 { font-size: 21px; font-weight: 700; }
+  .mf-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .mf-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 14px; margin-bottom: 20px; }
+  .mf-card { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.07); border-radius: 14px; padding: 16px 18px; }
+  .mf-card-label { font-size: 10px; color: #5a6490; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 8px; }
+  .mf-card-val { font-size: 20px; font-weight: 700; }
+  .mf-card-sub { font-size: 10px; color: #5a6490; margin-top: 4px; }
+
+  .mf-sec { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.07); border-radius: 14px; padding: 18px 22px; margin-bottom: 16px; }
+  .mf-sec-title { font-size: 10px; font-weight: 600; color: #5a6490; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 14px; }
+
+  .mf-inp { background: #131840; border: 1px solid rgba(255,255,255,.1); color: #e8eaf6; padding: 10px 14px; border-radius: 9px; font-size: 14px; outline: none; width: 100%; display: block; transition: border-color .2s; }
+  .mf-inp:focus { border-color: #00e5cc; }
+  .mf-textarea { background: #131840; border: 1px solid rgba(255,255,255,.1); color: #e8eaf6; padding: 10px 14px; border-radius: 9px; font-size: 14px; outline: none; width: 100%; display: block; transition: border-color .2s; resize: vertical; min-height: 80px; }
+  .mf-textarea:focus { border-color: #00e5cc; }
+  .mf-sel { background: #131840; border: 1px solid rgba(255,255,255,.1); color: #e8eaf6; padding: 7px 12px; border-radius: 8px; font-size: 13px; cursor: pointer; outline: none; }
+  .mf-sel:focus { border-color: #00e5cc; }
+
+  .mf-btn-p { padding: 10px 22px; border-radius: 9px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; background: linear-gradient(135deg,#00e5cc,#00b8a4); color: #07091a; transition: opacity .15s, transform .15s; }
+  .mf-btn-p:hover { opacity: .9; transform: translateY(-1px); }
+  .mf-btn-p:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+  .mf-btn-d { padding: 5px 12px; border-radius: 7px; cursor: pointer; font-size: 12px; border: 1px solid rgba(255,77,109,.3); background: rgba(255,77,109,.1); color: #ff4d6d; white-space: nowrap; }
+  .mf-btn-g { padding: 10px 18px; border-radius: 9px; cursor: pointer; font-size: 13px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.04); color: #9ba5c9; }
+  .mf-btn-sm { padding: 6px 14px; border-radius: 7px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; background: linear-gradient(135deg,#00e5cc,#00b8a4); color: #07091a; }
+
+  .mf-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .mf-form-group { display: flex; flex-direction: column; gap: 6px; }
+  .mf-form-group.full { grid-column: 1 / -1; }
+  .mf-form-label { font-size: 11px; color: #5a6490; text-transform: uppercase; letter-spacing: .7px; }
+
+  .mf-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .mf-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .mf-table th { font-size: 10px; color: #5a6490; text-transform: uppercase; letter-spacing: .7px; padding: 8px 10px; text-align: left; border-bottom: 1px solid rgba(255,255,255,.08); white-space: nowrap; }
+  .mf-table td { padding: 10px 10px; border-bottom: 1px solid rgba(255,255,255,.04); color: #9ba5c9; }
+  .mf-table tr:last-child td { border-bottom: none; }
+  .mf-chip { display: inline-block; background: rgba(255,255,255,.07); color: #9ba5c9; border-radius: 5px; padding: 2px 8px; font-size: 11px; white-space: nowrap; }
+
+  .mf-prog-item { margin-bottom: 12px; }
+  .mf-prog-meta { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; }
+  .mf-prog-bg { height: 6px; background: rgba(255,255,255,.07); border-radius: 99px; overflow: hidden; }
+  .mf-prog-fill { height: 100%; border-radius: 99px; transition: width .5s; }
+
+  .mf-budget-row { display: grid; grid-template-columns: 1fr 120px auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+  .mf-budget-row:last-child { border-bottom: none; }
+  .mf-budget-inp { background: #131840; border: 1px solid rgba(255,255,255,.1); color: #e8eaf6; padding: 6px 10px; border-radius: 7px; font-size: 13px; outline: none; width: 100%; }
+  .mf-budget-inp:focus { border-color: #00e5cc; }
+
+  .mf-chart-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+
+  .mf-msg-ok  { font-size: 13px; color: #00d68f; margin-top: 10px; }
+  .mf-msg-err { font-size: 13px; color: #ff4d6d; margin-top: 10px; }
+
+  /* Feedback */
+  .mf-thread-card { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.07); border-radius: 12px; padding: 16px 20px; margin-bottom: 12px; cursor: pointer; transition: border-color .2s, background .2s; }
+  .mf-thread-card:hover { border-color: rgba(0,229,204,.3); background: rgba(0,229,204,.04); }
+  .mf-thread-title { font-size: 15px; font-weight: 600; color: #e8eaf6; margin-bottom: 6px; }
+  .mf-thread-body { font-size: 13px; color: #9ba5c9; margin-bottom: 10px; line-height: 1.5; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .mf-thread-meta { display: flex; gap: 14px; font-size: 11px; color: #5a6490; flex-wrap: wrap; }
+  .mf-tag { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 600; }
+  .mf-tag-feature { background: rgba(0,229,204,.12); color: #00e5cc; }
+  .mf-tag-bug { background: rgba(255,77,109,.12); color: #ff4d6d; }
+  .mf-tag-complaint { background: rgba(255,184,48,.12); color: #ffb830; }
+  .mf-tag-other { background: rgba(255,255,255,.08); color: #9ba5c9; }
+  .mf-comment { display: flex; gap: 12px; padding: 14px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
+  .mf-comment:last-child { border-bottom: none; }
+  .mf-avatar { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; flex-shrink: 0; }
+  .mf-back-btn { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: #5a6490; font-size: 13px; margin-bottom: 18px; padding: 6px 0; }
+  .mf-back-btn:hover { color: #00e5cc; }
+
+  /* Auth tabs */
+  .mf-auth-tabs { display: flex; gap: 0; margin-bottom: 28px; border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,.08); }
+  .mf-auth-tab { flex: 1; padding: 10px; text-align: center; cursor: pointer; font-size: 13px; font-weight: 600; color: #5a6490; background: transparent; border: none; transition: all .2s; }
+  .mf-auth-tab.active { background: rgba(0,229,204,.1); color: #00e5cc; }
+
+  /* Profile */
+  .mf-profile-avatar { width: 72px; height: 72px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700; margin: 0 auto 16px; }
+  .mf-divider { height: 1px; background: rgba(255,255,255,.07); margin: 20px 0; }
+
+  @media (max-width: 768px) {
+    .mf-sidebar { transform: translateX(-100%); }
+    .mf-sidebar.open { transform: translateX(0); box-shadow: 4px 0 30px rgba(0,0,0,.6); }
+    .mf-overlay.open { display: block; }
+    .mf-hamburger { display: flex; align-items: center; }
+    .mf-logo-wrap { padding-top: 52px; }
+    .mf-main { margin-left: 0; padding: 70px 16px 90px; }
+    .mf-bottom-nav { display: flex; }
+    .mf-form-grid { grid-template-columns: 1fr; }
+    .mf-form-group.full { grid-column: 1; }
+    .mf-chart-2col { grid-template-columns: 1fr; }
+    .mf-topbar h2 { font-size: 18px; }
+    .mf-cards { grid-template-columns: 1fr 1fr; }
+    .mf-budget-row { grid-template-columns: 1fr auto; }
+    .mf-add-row { flex-direction: column !important; }
+  }
+  @media (max-width: 480px) {
+    .mf-cards { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .mf-card { padding: 12px 14px; }
+    .mf-card-val { font-size: 17px; }
+    .mf-sec { padding: 14px 14px; }
+  }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-10px)} 75%{transform:translateX(10px)} }
+`;
+
+// Avatar color from name
+const avatarColor = (name) => {
+  const colors = ["#00e5cc","#ff4d8d","#a78bfa","#60a5fa","#ffb830","#00d68f","#f97316"];
+  let h = 0; for (let c of (name||"?")) h = c.charCodeAt(0) + ((h<<5)-h);
+  return colors[Math.abs(h) % colors.length];
+};
+const avatarInitial = (name) => (name||"?")[0].toUpperCase();
+
+/* ── SVG Charts ── */
+function BarChart({ labels, datasets, height = 260 }) {
+  const maxVal = Math.max(...datasets.flatMap(d => d.data), 1);
+  const barW = Math.max(6, Math.min(22, Math.floor(480 / labels.length / datasets.length - 3)));
+  const groupW = barW * datasets.length + 4;
+  const [pL, pB, pT, pR] = [68, 50, 16, 16];
+  const W = Math.max(480, labels.length * (groupW + 8) + pL + pR);
+  const cH = height - pT - pB;
   return (
-    <div style={{overflowX:"auto"}}>
-      <svg viewBox={`0 0 ${W} ${height}`} width="100%" style={{height}}>
-        {[0,.25,.5,.75,1].map((f,i)=>{
-          const v=Math.round(maxVal*f), y=pT+cH-f*cH;
+    <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+      <svg viewBox={`0 0 ${W} ${height}`} width="100%" style={{ height, minWidth: 300 }}>
+        {[0,.25,.5,.75,1].map((f,i) => {
+          const v = Math.round(maxVal*f), y = pT+cH-f*cH;
           return <g key={i}>
-            <line x1={pL} x2={W-pR} y1={y} y2={y} stroke="rgba(255,255,255,0.05)" strokeWidth={0.5}/>
+            <line x1={pL} x2={W-pR} y1={y} y2={y} stroke="rgba(255,255,255,.05)" strokeWidth={0.5}/>
             <text x={pL-5} y={y+4} textAnchor="end" fontSize={9} fill="#5a6490">₹{v>=1000?Math.round(v/1000)+"k":v}</text>
           </g>;
         })}
-        {labels.map((lbl,li)=>{
-          const gx=pL+li*(groupW+8);
+        {labels.map((lbl,li) => {
+          const gx = pL+li*(groupW+8);
           return <g key={li}>
-            {datasets.map((ds,di)=>{
+            {datasets.map((ds,di) => {
               const val=ds.data[li]||0, bh=Math.max(2,(val/maxVal)*cH);
               return <rect key={di} x={gx+di*(barW+2)} y={pT+cH-bh} width={barW} height={bh} rx={2} fill={ds.colors?ds.colors[li]:ds.color} opacity={0.85}/>;
             })}
-            <text x={gx+groupW/2} y={height-pB+15} textAnchor="middle" fontSize={9} fill="#5a6490"
-              transform={labels.length>8?`rotate(-38,${gx+groupW/2},${height-pB+15})`:""}>
+            <text x={gx+groupW/2} y={height-pB+16} textAnchor="middle" fontSize={9} fill="#5a6490"
+              transform={labels.length>8?`rotate(-38,${gx+groupW/2},${height-pB+16})`:""}>
               {lbl.length>9?lbl.slice(0,8)+"…":lbl}
             </text>
           </g>;
         })}
       </svg>
       <div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:6}}>
-        {datasets.map((ds,i)=>(
+        {datasets.map((ds,i) => (
           <span key={i} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:"#9ba5c9"}}>
             <span style={{width:10,height:10,borderRadius:2,background:ds.color,display:"inline-block"}}/>
             {ds.label}
@@ -87,12 +228,11 @@ function BarChart({ labels, datasets, height=260 }) {
   );
 }
 
-// ── SVG Donut ──
 function DonutChart({ labels, data, colors }) {
   const total = data.reduce((a,b)=>a+b,0)||1;
   let angle = -Math.PI/2;
   const [cx,cy,r,inn] = [110,110,80,50];
-  const slices = data.map((v,i)=>{
+  const slices = data.map((v,i) => {
     const sw=(v/total)*2*Math.PI;
     const x1=cx+r*Math.cos(angle),y1=cy+r*Math.sin(angle);
     angle+=sw;
@@ -102,18 +242,18 @@ function DonutChart({ labels, data, colors }) {
     return {path:`M${x1},${y1} A${r},${r},0,${sw>Math.PI?1:0},1,${x2},${y2} L${xi2},${yi2} A${inn},${inn},0,${sw>Math.PI?1:0},0,${xi1},${yi1} Z`,color:colors[i%colors.length],label:labels[i],val:v};
   });
   return (
-    <div style={{display:"flex",alignItems:"center",gap:20,flexWrap:"wrap"}}>
-      <svg viewBox="0 0 220 220" width={170} height={170}>
+    <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+      <svg viewBox="0 0 220 220" width={150} height={150}>
         {slices.map((s,i)=><path key={i} d={s.path} fill={s.color} opacity={0.9}/>)}
         <text x={cx} y={cy-5} textAnchor="middle" fontSize={11} fill="#9ba5c9">Total</text>
         <text x={cx} y={cy+13} textAnchor="middle" fontSize={13} fontWeight={600} fill="#e8eaf6">₹{Math.round(total/1000)}k</text>
       </svg>
-      <div style={{display:"flex",flexDirection:"column",gap:7,flex:1}}>
+      <div style={{display:"flex",flexDirection:"column",gap:7,flex:1,minWidth:120}}>
         {slices.map((s,i)=>(
-          <div key={i} style={{display:"flex",alignItems:"center",gap:7,fontSize:11,color:"#9ba5c9"}}>
+          <div key={i} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"#9ba5c9"}}>
             <span style={{width:8,height:8,borderRadius:2,background:s.color,flexShrink:0}}/>
             <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.label}</span>
-            <span style={{fontWeight:500,color:"#e8eaf6"}}>{fmt(s.val)}</span>
+            <span style={{fontWeight:500,color:"#e8eaf6",flexShrink:0}}>{fmt(s.val)}</span>
           </div>
         ))}
       </div>
@@ -121,20 +261,19 @@ function DonutChart({ labels, data, colors }) {
   );
 }
 
-// ── SVG Line Chart ──
-function LineChart({ labels, datasets, height=200 }) {
+function LineChart({ labels, datasets, height = 200 }) {
   const maxVal = Math.max(...datasets.flatMap(d=>d.data),1);
   const [pL,pB,pT,pR] = [60,34,14,16];
   const W=560, cW=W-pL-pR, cH=height-pT-pB;
   const xStep=cW/(labels.length-1||1);
   const pathD = (data) => data.map((v,i)=>`${i===0?"M":"L"}${pL+i*xStep},${pT+cH-(v/maxVal)*cH}`).join(" ");
   return (
-    <div style={{overflowX:"auto"}}>
-      <svg viewBox={`0 0 ${W} ${height}`} width="100%" style={{height}}>
+    <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+      <svg viewBox={`0 0 ${W} ${height}`} width="100%" style={{height,minWidth:280}}>
         {[0,.25,.5,.75,1].map((f,i)=>{
           const v=Math.round(maxVal*f),y=pT+cH-f*cH;
           return <g key={i}>
-            <line x1={pL} x2={W-pR} y1={y} y2={y} stroke="rgba(255,255,255,0.05)" strokeWidth={0.5}/>
+            <line x1={pL} x2={W-pR} y1={y} y2={y} stroke="rgba(255,255,255,.05)" strokeWidth={0.5}/>
             <text x={pL-5} y={y+4} textAnchor="end" fontSize={9} fill="#5a6490">₹{v>=1000?Math.round(v/1000)+"k":v}</text>
           </g>;
         })}
@@ -161,49 +300,84 @@ function LineChart({ labels, datasets, height=200 }) {
   );
 }
 
-// ── Login Screen ──
-function LoginScreen({ onLogin }) {
+/* ── Auth Screen (Login + Signup) ── */
+function AuthScreen({ onLogin }) {
+  const [tab, setTab] = useState("login");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const [shake, setShake] = useState(false);
 
-  const login = async () => {
+  const doLogin = async () => {
     if (!email||!password) { setError("Enter email and password"); return; }
     setLoading(true); setError("");
-    const { data, error:err } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error: err } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (err) { setError("Invalid email or password."); setShake(true); setTimeout(()=>setShake(false),500); }
     else onLogin(data.session);
   };
 
+  const doSignup = async () => {
+    if (!name.trim()||!email||!password) { setError("Please fill all fields"); return; }
+    if (password.length < 6) { setError("Password must be at least 6 characters"); return; }
+    setLoading(true); setError("");
+    const { data, error: err } = await supabase.auth.signUp({
+      email, password,
+      options: { data: { display_name: name.trim() } }
+    });
+    setLoading(false);
+    if (err) { setError(err.message); return; }
+    // insert profile row
+    if (data.user) {
+      await supabase.from("profiles").upsert({ id: data.user.id, display_name: name.trim(), email });
+    }
+    if (data.session) { onLogin(data.session); }
+    else { setSuccess("Account created! You can now sign in."); setTab("login"); setName(""); setPassword(""); }
+  };
+
   return (
-    <div style={{minHeight:"100vh",background:"#07091a",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"system-ui,sans-serif"}}>
+    <div style={{minHeight:"100vh",background:"#07091a",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
       <style>{`@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-10px)}75%{transform:translateX(10px)}}`}</style>
-      <div style={{background:"#0d1130",border:"1px solid rgba(255,255,255,0.08)",borderRadius:20,padding:"48px 40px",width:"100%",maxWidth:380,textAlign:"center",animation:shake?"shake .4s ease":"none"}}>
-        <div style={{width:64,height:64,borderRadius:"50%",background:"rgba(0,229,204,0.1)",border:"1px solid rgba(0,229,204,0.2)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:28}}>💰</div>
-        <div style={{fontSize:26,fontWeight:800,background:"linear-gradient(135deg,#00e5cc,#ff4d8d)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",marginBottom:4}}>Monefy</div>
-        <div style={{fontSize:13,color:"#5a6490",marginBottom:32}}>Your personal finance tracker</div>
+      <div style={{background:"#0d1130",border:"1px solid rgba(255,255,255,.08)",borderRadius:20,padding:"40px 36px",width:"100%",maxWidth:400,textAlign:"center",animation:shake?"shake .4s ease":"none"}}>
+        <div style={{width:58,height:58,borderRadius:"50%",background:"rgba(0,229,204,.1)",border:"1px solid rgba(0,229,204,.2)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",fontSize:26}}>💰</div>
+        <div style={{fontSize:26,fontWeight:800,background:"linear-gradient(135deg,#00e5cc,#ff4d8d)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",marginBottom:4,display:"inline-block"}}>Monefy</div>        <div style={{fontSize:13,color:"#5a6490",marginBottom:24}}>Personal finance tracker</div>
+
+        <div className="mf-auth-tabs">
+          <button className={`mf-auth-tab ${tab==="login"?"active":""}`} onClick={()=>{setTab("login");setError("");setSuccess("");}}>Sign In</button>
+          <button className={`mf-auth-tab ${tab==="signup"?"active":""}`} onClick={()=>{setTab("signup");setError("");setSuccess("");}}>Sign Up</button>
+        </div>
+
         <div style={{display:"flex",flexDirection:"column",gap:12,textAlign:"left"}}>
-          <div>
-            <div style={{fontSize:11,color:"#5a6490",textTransform:"uppercase",letterSpacing:".7px",marginBottom:6}}>Email</div>
-            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()} placeholder="you@email.com" style={{...S.inp,borderColor:error?"#ff4d6d":"rgba(255,255,255,0.1)"}}/>
+          {tab==="signup" && (
+            <div className="mf-form-group">
+              <label className="mf-form-label">Your Name</label>
+              <input type="text" className="mf-inp" value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Raj Sharma"/>
+            </div>
+          )}
+          <div className="mf-form-group">
+            <label className="mf-form-label">Email</label>
+            <input type="email" className="mf-inp" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&(tab==="login"?doLogin():doSignup())} placeholder="you@email.com" style={{borderColor:error?"#ff4d6d":undefined}}/>
           </div>
-          <div>
-            <div style={{fontSize:11,color:"#5a6490",textTransform:"uppercase",letterSpacing:".7px",marginBottom:6}}>Password</div>
+          <div className="mf-form-group">
+            <label className="mf-form-label">Password</label>
             <div style={{position:"relative"}}>
-              <input type={show?"text":"password"} value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()} placeholder="••••••••" style={{...S.inp,paddingRight:44,borderColor:error?"#ff4d6d":"rgba(255,255,255,0.1)"}}/>
-              <span onClick={()=>setShow(s=>!s)} style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",cursor:"pointer",fontSize:15,color:"#5a6490"}}>{show?"🙈":"👁️"}</span>
+              <input type={show?"text":"password"} className="mf-inp" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&(tab==="login"?doLogin():doSignup())} placeholder="••••••••" style={{paddingRight:44,borderColor:error?"#ff4d6d":undefined}}/>
+              <span onClick={()=>setShow(s=>!s)} style={{position:"absolute",right:13,top:"50%",transform:"translateY(-50%)",cursor:"pointer",fontSize:15,color:"#5a6490"}}>{show?"🙈":"👁️"}</span>
             </div>
           </div>
         </div>
-        {error&&<div style={{color:"#ff4d6d",fontSize:12,marginTop:10}}>{error}</div>}
-        <button onClick={login} disabled={loading} style={{...S.btnP,width:"100%",marginTop:20,opacity:loading?.7:1}}>
-          {loading?"Signing in…":"Sign In"}
+
+        {error && <div style={{color:"#ff4d6d",fontSize:12,marginTop:10,textAlign:"left"}}>{error}</div>}
+        {success && <div style={{color:"#00d68f",fontSize:12,marginTop:10,textAlign:"left"}}>{success}</div>}
+
+        <button className="mf-btn-p" onClick={tab==="login"?doLogin:doSignup} disabled={loading} style={{width:"100%",marginTop:18}}>
+          {loading?(tab==="login"?"Signing in…":"Creating account…"):(tab==="login"?"Sign In":"Create Account")}
         </button>
-        <div style={{marginTop:20,fontSize:11,color:"#2a304a"}}>🔒 Secured by Supabase Auth</div>
+        <div style={{marginTop:16,fontSize:11,color:"#2a304a"}}>🔒 Secured by Supabase Auth</div>
       </div>
     </div>
   );
@@ -211,401 +385,637 @@ function LoginScreen({ onLogin }) {
 
 function Loader() {
   return (
-    <div style={{minHeight:"100vh",background:"#07091a",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
-      <div style={{fontSize:26,fontWeight:800,background:"linear-gradient(135deg,#00e5cc,#ff4d8d)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Monefy</div>
-      <div style={{color:"#5a6490",fontSize:13}}>Loading your data…</div>
+    <div style={{minHeight:"100vh",background:"#07091a",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:14}}>
+      <div style={{fontSize:26,fontWeight:800,background:"linear-gradient(135deg,#00e5cc,#ff4d8d)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",display:"inline-block"}}>Monefy</div>
+      <div style={{color:"#5a6490",fontSize:13}}>Loading…</div>
     </div>
   );
 }
 
-// ── Main App ──
-export default function App() {
-  const [session, setSession] = useState(undefined);
-  const [page, setPage] = useState("dashboard");
-  const [budget, setBudget] = useState({});
-  const [transactions, setTransactions] = useState([]);
-  const [loading, setLoading] = useState(false);
+/* ══ PAGE COMPONENTS — all outside App to prevent remount/defocus ══ */
 
-  const now = new Date();
-  const [selMonth, setSelMonth] = useState(now.getMonth());
-  const [selYear,  setSelYear]  = useState(now.getFullYear());
-  const [txnM, setTxnM] = useState(now.getMonth());
-  const [txnY, setTxnY] = useState(now.getFullYear());
-  const [chartView, setChartView] = useState("monthly");
-  const [chartM, setChartM] = useState(now.getMonth());
-  const [chartY, setChartY] = useState(now.getFullYear());
+function Dashboard({ budget, transactions, selMonth, setSelMonth, selYear, setSelYear }) {
+  const txns = transactions.filter(t=>{ const d=new Date(t.date); return d.getMonth()===selMonth&&d.getFullYear()===selYear; });
+  const spend = {}; txns.forEach(t=>{spend[t.category]=(spend[t.category]||0)+t.amount;});
+  const totalBudget = Object.values(budget).reduce((a,b)=>a+b,0);
+  const totalSpent = Object.values(spend).reduce((a,b)=>a+b,0);
+  const remaining = totalBudget-totalSpent;
+  const overCats = Object.keys(budget).filter(c=>(spend[c]||0)>budget[c]&&budget[c]>0).length;
+  const recent = [...txns].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6);
+  const activeCats = Object.keys(budget).filter(c=>budget[c]>0);
 
-  const [txnDate, setTxnDate] = useState(now.toISOString().slice(0,10));
-  const [txnAmt,  setTxnAmt]  = useState("");
-  const [txnDesc, setTxnDesc] = useState("");
-  const [txnCat,  setTxnCat]  = useState("");
-  const [addMsg,  setAddMsg]  = useState(null);
-  const [newCat,    setNewCat]    = useState("");
-  const [newCatAmt, setNewCatAmt] = useState("");
-  const [budgetMsg, setBudgetMsg] = useState(null);
-  const [localBudget, setLocalBudget] = useState({});
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({data})=>setSession(data.session??null));
-    const {data:{subscription}} = supabase.auth.onAuthStateChange((_,s)=>setSession(s));
-    return ()=>subscription.unsubscribe();
-  }, []);
-
-  useEffect(() => { if(session){loadBudget();loadTransactions();} }, [session]);
-
-  const loadBudget = async () => {
-    const {data} = await supabase.from("budget").select("*").order("category");
-    if (data) {
-      const obj={};
-      data.forEach(r=>{obj[r.category]=r.amount;});
-      setBudget(obj); setLocalBudget(obj);
-      if (!txnCat && data.length) setTxnCat(data[0].category);
-    }
-  };
-
-  const loadTransactions = async () => {
-    const {data} = await supabase.from("transactions").select("*").order("date",{ascending:false});
-    if (data) setTransactions(data);
-  };
-
-  const getMonthTxn = (m,y) => transactions.filter(t=>{const d=new Date(t.date);return d.getMonth()===m&&d.getFullYear()===y;});
-  const getCatSpend = (txns) => {const r={};txns.forEach(t=>{r[t.category]=(r[t.category]||0)+t.amount;});return r;};
-  const signOut = async () => {await supabase.auth.signOut();setSession(null);setBudget({});setTransactions([]);};
-
-  if (session===undefined) return <Loader/>;
-  if (session===null) return <LoginScreen onLogin={setSession}/>;
-
-  const addTransaction = async () => {
-    if (!txnDate||!txnAmt||!txnDesc||!txnCat){setAddMsg({t:"err",m:"Please fill all fields"});return;}
-    setLoading(true);
-    const {error} = await supabase.from("transactions").insert({date:txnDate,description:txnDesc,category:txnCat,amount:parseFloat(txnAmt),user_id:session.user.id});
-    setLoading(false);
-    if (error){setAddMsg({t:"err",m:"Error saving. Try again."});return;}
-    setAddMsg({t:"ok",m:"Expense saved! ✓"});
-    setTxnAmt("");setTxnDesc("");
-    loadTransactions();
-    setTimeout(()=>setAddMsg(null),2000);
-  };
-
-  const deleteTxn = async (id) => {
-    if (!window.confirm("Delete this transaction?")) return;
-    await supabase.from("transactions").delete().eq("id",id);
-    loadTransactions();
-  };
-
-  const saveBudget = async () => {
-    const rows = Object.entries(localBudget).map(([category,amount])=>({category,amount,user_id:session.user.id}));
-    const {error} = await supabase.from("budget").upsert(rows,{onConflict:"category,user_id"});
-    if (error){setBudgetMsg({t:"err",m:"Error saving budget."});return;}
-    setBudget({...localBudget});
-    setBudgetMsg({t:"ok",m:"Budget saved! ✓"});
-    setTimeout(()=>setBudgetMsg(null),2000);
-  };
-
-  const addCategory = async () => {
-    if (!newCat.trim()){setBudgetMsg({t:"err",m:"Enter category name"});return;}
-    if (localBudget[newCat.trim()]!==undefined){setBudgetMsg({t:"err",m:"Already exists"});return;}
-    const {error} = await supabase.from("budget").insert({category:newCat.trim(),amount:parseFloat(newCatAmt)||0,user_id:session.user.id});
-    if (error){setBudgetMsg({t:"err",m:"Error adding category."});return;}
-    setNewCat("");setNewCatAmt("");
-    loadBudget();
-    setBudgetMsg({t:"ok",m:"Category added!"});
-    setTimeout(()=>setBudgetMsg(null),2000);
-  };
-
-  const deleteCategory = async (cat) => {
-    if (!window.confirm(`Remove "${cat}"?`)) return;
-    await supabase.from("budget").delete().eq("category",cat).eq("user_id",session.user.id);
-    loadBudget();
-  };
-
-  const cats = Object.keys(budget);
-  const totalBudgetAll = Object.values(budget).reduce((a,b)=>a+b,0);
-
-  const NAV = [
-    {id:"dashboard",icon:"📊",label:"Dashboard"},
-    {id:"add",icon:"➕",label:"Add Expense"},
-    {id:"transactions",icon:"📋",label:"Transactions"},
-    {id:"charts",icon:"📈",label:"Charts"},
-    {id:"budget",icon:"🎯",label:"Budget"},
-  ];
-
-  // ── DASHBOARD ──
-  const Dashboard = () => {
-    const txns=getMonthTxn(selMonth,selYear);
-    const spend=getCatSpend(txns);
-    const totalSpent=Object.values(spend).reduce((a,b)=>a+b,0);
-    const remaining=totalBudgetAll-totalSpent;
-    const overCats=cats.filter(c=>(spend[c]||0)>budget[c]&&budget[c]>0).length;
-    const recent=[...txns].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6);
-    const activeCats=cats.filter(c=>budget[c]>0);
-    return (
-      <div>
-        <div style={S.topbar}>
-          <h2 style={S.h2}>Dashboard</h2>
-          <div style={{display:"flex",gap:8}}>
-            <select style={S.sel} value={selMonth} onChange={e=>setSelMonth(+e.target.value)}>{MONTHS.map((m,i)=><option key={i} value={i}>{m}</option>)}</select>
-            <select style={S.sel} value={selYear}  onChange={e=>setSelYear(+e.target.value)}>{[2024,2025,2026,2027].map(y=><option key={y} value={y}>{y}</option>)}</select>
-          </div>
-        </div>
-        <div style={S.grid4}>
-          {[
-            {label:"Total Budget",val:fmt(totalBudgetAll),sub:MONTHS[selMonth]+" "+selYear,color:"#00e5cc"},
-            {label:"Total Spent",val:fmt(totalSpent),sub:pct(totalSpent,totalBudgetAll)+"% used",color:"#ff4d8d"},
-            {label:remaining>=0?"Remaining":"Over Budget",val:fmt(Math.abs(remaining)),sub:txns.length+" transactions",color:remaining>=0?"#00d68f":"#ff4d6d"},
-            {label:"Over Budget",val:overCats+" cats",sub:"need attention",color:"#ffb830"},
-          ].map((c,i)=>(
-            <div key={i} style={S.card}>
-              <div style={S.cardLabel}>{c.label}</div>
-              <div style={S.cardVal(c.color)}>{c.val}</div>
-              <div style={S.cardSub}>{c.sub}</div>
-            </div>
-          ))}
-        </div>
-        <div style={S.sec}>
-          <div style={S.secTitle}>Budget vs Actual</div>
-          {activeCats.length===0&&<div style={{color:"#5a6490",fontSize:13}}>No budget yet. Go to Budget page to add categories.</div>}
-          {activeCats.map(cat=>{
-            const s=spend[cat]||0,b=budget[cat],p=pct(s,b),over=s>b;
-            return (
-              <div key={cat} style={{marginBottom:12}}>
-                <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,marginBottom:4}}>
-                  <span style={{color:"#e8eaf6"}}>{cat}</span>
-                  <span style={{color:"#9ba5c9"}}>{fmt(s)} / {fmt(b)}</span>
-                </div>
-                <div style={S.pbg}><div style={S.pfill(p,over)}/></div>
-              </div>
-            );
-          })}
-        </div>
-        <div style={S.sec}>
-          <div style={S.secTitle}>Recent Transactions</div>
-          {recent.length===0
-            ?<div style={{color:"#5a6490",fontSize:13,padding:"20px 0",textAlign:"center"}}>No transactions this month</div>
-            :<div style={{overflowX:"auto"}}>
-              <table style={S.tbl}>
-                <thead><tr><th style={S.th}>Date</th><th style={S.th}>Description</th><th style={S.th}>Category</th><th style={S.th}>Amount</th></tr></thead>
-                <tbody>{recent.map(t=>(
-                  <tr key={t.id}>
-                    <td style={S.td}>{t.date}</td>
-                    <td style={{...S.td,color:"#e8eaf6"}}>{t.description}</td>
-                    <td style={S.td}><span style={S.chip}>{t.category}</span></td>
-                    <td style={{...S.td,color:"#ff4d8d",fontWeight:600}}>{fmt(t.amount)}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            </div>
-          }
+  return (
+    <div>
+      <div className="mf-topbar">
+        <h2>Dashboard</h2>
+        <div className="mf-filters">
+          <select className="mf-sel" value={selMonth} onChange={e=>setSelMonth(+e.target.value)}>{MONTHS.map((m,i)=><option key={i} value={i}>{m}</option>)}</select>
+          <select className="mf-sel" value={selYear} onChange={e=>setSelYear(+e.target.value)}>{YEARS.map(y=><option key={y} value={y}>{y}</option>)}</select>
         </div>
       </div>
-    );
+      <div className="mf-cards">
+        {[
+          {label:"Total Budget",val:fmt(totalBudget),sub:MONTHS[selMonth]+" "+selYear,color:"#00e5cc"},
+          {label:"Total Spent",val:fmt(totalSpent),sub:pct(totalSpent,totalBudget)+"% used",color:"#ff4d8d"},
+          {label:remaining>=0?"Remaining":"Over Budget",val:fmt(Math.abs(remaining)),sub:txns.length+" transactions",color:remaining>=0?"#00d68f":"#ff4d6d"},
+          {label:"Over Budget",val:overCats+" cats",sub:"need attention",color:"#ffb830"},
+        ].map((c,i)=>(
+          <div key={i} className="mf-card">
+            <div className="mf-card-label">{c.label}</div>
+            <div className="mf-card-val" style={{color:c.color}}>{c.val}</div>
+            <div className="mf-card-sub">{c.sub}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mf-sec">
+        <div className="mf-sec-title">Budget vs Actual</div>
+        {activeCats.length===0&&<div style={{color:"#5a6490",fontSize:13}}>No budget yet. Go to Budget to add categories.</div>}
+        {activeCats.map(cat=>{
+          const s=spend[cat]||0,b=budget[cat],p=pct(s,b),over=s>b;
+          return (
+            <div key={cat} className="mf-prog-item">
+              <div className="mf-prog-meta">
+                <span style={{color:"#e8eaf6"}}>{cat}</span>
+                <span style={{color:"#9ba5c9"}}>{fmt(s)} / {fmt(b)}</span>
+              </div>
+              <div className="mf-prog-bg"><div className="mf-prog-fill" style={{width:`${Math.min(p,100)}%`,background:over?"#ff4d6d":p>80?"#ffb830":"#00e5cc"}}/></div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mf-sec">
+        <div className="mf-sec-title">Recent Transactions</div>
+        {recent.length===0
+          ?<div style={{color:"#5a6490",fontSize:13,padding:"20px 0",textAlign:"center"}}>No transactions this month</div>
+          :<div className="mf-table-wrap">
+            <table className="mf-table">
+              <thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Amount</th></tr></thead>
+              <tbody>{recent.map(t=>(
+                <tr key={t.id}>
+                  <td>{t.date}</td><td style={{color:"#e8eaf6"}}>{t.description}</td>
+                  <td><span className="mf-chip">{t.category}</span></td>
+                  <td style={{color:"#ff4d8d",fontWeight:600}}>{fmt(t.amount)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>}
+      </div>
+    </div>
+  );
+}
+
+function AddExpense({ budget, onSaved }) {
+  const cats = Object.keys(budget);
+  const [date, setDate] = useState(new Date().toISOString().slice(0,10));
+  const [amount, setAmount] = useState("");
+  const [desc, setDesc] = useState("");
+  const [cat, setCat] = useState(cats[0]||"");
+  const [msg, setMsg] = useState(null);
+  const [loading, setLoading] = useState(false);
+  useEffect(()=>{ if(!cat&&cats.length) setCat(cats[0]); },[cats]);
+
+  const save = async () => {
+    if (!date||!amount||!desc||!cat){setMsg({t:"err",m:"Please fill all fields"});return;}
+    setLoading(true);
+    const {data:{session}} = await supabase.auth.getSession();
+    const {error} = await supabase.from("transactions").insert({date,description:desc,category:cat,amount:parseFloat(amount),user_id:session.user.id});
+    setLoading(false);
+    if (error){setMsg({t:"err",m:"Error saving."});return;}
+    setMsg({t:"ok",m:"Expense saved! ✓"});
+    setAmount(""); setDesc("");
+    onSaved();
+    setTimeout(()=>setMsg(null),2500);
   };
 
-  // ── ADD EXPENSE ──
-  const AddExpense = () => (
+  return (
     <div>
-      <div style={S.topbar}><h2 style={S.h2}>Add Expense</h2></div>
-      <div style={{...S.sec,maxWidth:520}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-          {[
-            {label:"Date",type:"date",val:txnDate,set:setTxnDate,full:false},
-            {label:"Amount (₹)",type:"number",val:txnAmt,set:setTxnAmt,placeholder:"0.00",full:false},
-          ].map(f=>(
-            <div key={f.label} style={{display:"flex",flexDirection:"column",gap:6}}>
-              <label style={{fontSize:11,color:"#5a6490",textTransform:"uppercase",letterSpacing:".7px"}}>{f.label}</label>
-              <input type={f.type} style={S.inp} value={f.val} onChange={e=>f.set(e.target.value)} placeholder={f.placeholder}/>
-            </div>
-          ))}
-          <div style={{display:"flex",flexDirection:"column",gap:6,gridColumn:"1/-1"}}>
-            <label style={{fontSize:11,color:"#5a6490",textTransform:"uppercase",letterSpacing:".7px"}}>Description</label>
-            <input type="text" style={S.inp} value={txnDesc} onChange={e=>setTxnDesc(e.target.value)} placeholder="What did you spend on?"/>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:6,gridColumn:"1/-1"}}>
-            <label style={{fontSize:11,color:"#5a6490",textTransform:"uppercase",letterSpacing:".7px"}}>Category</label>
-            <select style={{...S.inp,cursor:"pointer"}} value={txnCat} onChange={e=>setTxnCat(e.target.value)}>
+      <div className="mf-topbar"><h2>Add Expense</h2></div>
+      <div className="mf-sec" style={{maxWidth:520}}>
+        <div className="mf-form-grid">
+          <div className="mf-form-group"><label className="mf-form-label">Date</label><input type="date" className="mf-inp" value={date} onChange={e=>setDate(e.target.value)}/></div>
+          <div className="mf-form-group"><label className="mf-form-label">Amount (₹)</label><input type="number" className="mf-inp" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0.00" min="0" step="0.01"/></div>
+          <div className="mf-form-group full"><label className="mf-form-label">Description</label><input type="text" className="mf-inp" value={desc} onChange={e=>setDesc(e.target.value)} placeholder="What did you spend on?"/></div>
+          <div className="mf-form-group full"><label className="mf-form-label">Category</label>
+            <select className="mf-inp" style={{cursor:"pointer"}} value={cat} onChange={e=>setCat(e.target.value)}>
               {cats.map(c=><option key={c} value={c}>{c}</option>)}
             </select>
           </div>
         </div>
-        <div style={{marginTop:18,display:"flex",gap:10}}>
-          <button style={{...S.btnP,opacity:loading?.7:1}} onClick={addTransaction} disabled={loading}>{loading?"Saving…":"Save Expense"}</button>
-          <button style={S.btnG} onClick={()=>{setTxnAmt("");setTxnDesc("");}}>Clear</button>
+        <div style={{marginTop:18,display:"flex",gap:10,flexWrap:"wrap"}}>
+          <button className="mf-btn-p" onClick={save} disabled={loading}>{loading?"Saving…":"Save Expense"}</button>
+          <button className="mf-btn-g" onClick={()=>{setAmount("");setDesc("");}}>Clear</button>
         </div>
-        {addMsg&&<div style={{marginTop:10,fontSize:13,color:addMsg.t==="ok"?"#00d68f":"#ff4d6d"}}>{addMsg.m}</div>}
+        {msg&&<div className={msg.t==="ok"?"mf-msg-ok":"mf-msg-err"}>{msg.m}</div>}
       </div>
     </div>
   );
+}
 
-  // ── TRANSACTIONS ──
-  const Transactions = () => {
-    const txns=getMonthTxn(txnM,txnY).sort((a,b)=>b.date.localeCompare(a.date));
-    return (
-      <div>
-        <div style={S.topbar}>
-          <h2 style={S.h2}>Transactions</h2>
-          <div style={{display:"flex",gap:8}}>
-            <select style={S.sel} value={txnM} onChange={e=>setTxnM(+e.target.value)}>{MONTHS.map((m,i)=><option key={i} value={i}>{m}</option>)}</select>
-            <select style={S.sel} value={txnY} onChange={e=>setTxnY(+e.target.value)}>{[2024,2025,2026,2027].map(y=><option key={y} value={y}>{y}</option>)}</select>
-          </div>
-        </div>
-        <div style={S.sec}>
-          {txns.length===0
-            ?<div style={{color:"#5a6490",fontSize:13,padding:"32px 0",textAlign:"center"}}>No transactions this month</div>
-            :<div style={{overflowX:"auto"}}>
-              <table style={S.tbl}>
-                <thead><tr><th style={S.th}>Date</th><th style={S.th}>Description</th><th style={S.th}>Category</th><th style={S.th}>Amount</th><th style={S.th}></th></tr></thead>
-                <tbody>{txns.map(t=>(
-                  <tr key={t.id}>
-                    <td style={S.td}>{t.date}</td>
-                    <td style={{...S.td,color:"#e8eaf6"}}>{t.description}</td>
-                    <td style={S.td}><span style={S.chip}>{t.category}</span></td>
-                    <td style={{...S.td,color:"#ff4d8d",fontWeight:600}}>{fmt(t.amount)}</td>
-                    <td style={S.td}><button style={S.btnD} onClick={()=>deleteTxn(t.id)}>Delete</button></td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            </div>
-          }
-        </div>
-      </div>
-    );
+function Transactions({ transactions, onDeleted }) {
+  const now = new Date();
+  const [m, setM] = useState(now.getMonth());
+  const [y, setY] = useState(now.getFullYear());
+  const txns = transactions.filter(t=>{const d=new Date(t.date);return d.getMonth()===m&&d.getFullYear()===y;}).sort((a,b)=>b.date.localeCompare(a.date));
+
+  const del = async (id) => {
+    if (!window.confirm("Delete this transaction?")) return;
+    await supabase.from("transactions").delete().eq("id",id);
+    onDeleted();
   };
-
-  // ── CHARTS ──
-  const Charts = () => {
-    const txns=chartView==="monthly"?getMonthTxn(chartM,chartY):transactions.filter(t=>new Date(t.date).getFullYear()===chartY);
-    const spend=getCatSpend(txns);
-    const activeCats=cats.filter(c=>budget[c]>0||(spend[c]||0)>0);
-    const spentCats=activeCats.filter(c=>(spend[c]||0)>0);
-    const dayLabels=chartView==="monthly"?Array.from({length:31},(_,i)=>String(i+1)):MONTHS_SHORT;
-    const dayData=chartView==="monthly"
-      ?dayLabels.map(d=>{const m={};txns.forEach(t=>{const dd=new Date(t.date).getDate();m[dd]=(m[dd]||0)+t.amount;});return m[+d]||0;})
-      :MONTHS_SHORT.map((_,mi)=>transactions.filter(t=>{const dt=new Date(t.date);return dt.getFullYear()===chartY&&dt.getMonth()===mi;}).reduce((s,t)=>s+t.amount,0));
-    const monthlyTotals=MONTHS_SHORT.map((_,mi)=>transactions.filter(t=>{const dt=new Date(t.date);return dt.getFullYear()===chartY&&dt.getMonth()===mi;}).reduce((s,t)=>s+t.amount,0));
-    const over=activeCats.filter(c=>(spend[c]||0)>budget[c]&&budget[c]>0).map(c=>({cat:c,diff:(spend[c]||0)-budget[c]})).sort((a,b)=>b.diff-a.diff);
-    const under=activeCats.filter(c=>(spend[c]||0)<budget[c]&&budget[c]>0).map(c=>({cat:c,diff:budget[c]-(spend[c]||0)})).sort((a,b)=>b.diff-a.diff);
-    return (
-      <div>
-        <div style={S.topbar}>
-          <h2 style={S.h2}>Charts & Insights</h2>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <select style={S.sel} value={chartView} onChange={e=>setChartView(e.target.value)}><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select>
-            {chartView==="monthly"&&<select style={S.sel} value={chartM} onChange={e=>setChartM(+e.target.value)}>{MONTHS.map((m,i)=><option key={i} value={i}>{m}</option>)}</select>}
-            <select style={S.sel} value={chartY} onChange={e=>setChartY(+e.target.value)}>{[2024,2025,2026,2027].map(y=><option key={y} value={y}>{y}</option>)}</select>
-          </div>
-        </div>
-        <div style={S.sec}>
-          <div style={S.secTitle}>Budget vs Actual (₹)</div>
-          {activeCats.length?<BarChart labels={activeCats} datasets={[
-            {label:"Budget",data:activeCats.map(c=>budget[c]||0),color:"#00e5cc"},
-            {label:"Actual",data:activeCats.map(c=>spend[c]||0),colors:activeCats.map(c=>(spend[c]||0)>(budget[c]||0)?"#ff4d6d":"#00d68f"),color:"#00d68f"},
-          ]} height={280}/>:<div style={{color:"#5a6490",fontSize:13}}>No data yet</div>}
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
-          <div style={S.sec}>
-            <div style={S.secTitle}>Spending by Category</div>
-            {spentCats.length?<DonutChart labels={spentCats} data={spentCats.map(c=>spend[c])} colors={PIE_COLORS}/>:<div style={{color:"#5a6490",fontSize:13,padding:"20px 0"}}>No spending data</div>}
-          </div>
-          <div style={S.sec}>
-            <div style={S.secTitle}>{chartView==="monthly"?"Day-wise":"Month-wise"} Spending</div>
-            <BarChart labels={dayLabels} datasets={[{label:"Spent",data:dayData,color:"#ffb830"}]} height={220}/>
-          </div>
-        </div>
-        <div style={S.sec}>
-          <div style={S.secTitle}>Monthly Trend {chartY}</div>
-          <LineChart labels={MONTHS_SHORT} datasets={[
-            {label:"Spent",data:monthlyTotals,color:"#ff4d8d",fill:true},
-            {label:"Budget",data:MONTHS_SHORT.map(()=>totalBudgetAll),color:"#00e5cc",dash:true},
-          ]} height={200}/>
-        </div>
-        <div style={S.sec}>
-          <div style={S.secTitle}>Over / Under Budget Summary</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-            <div>
-              <div style={{fontSize:11,color:"#ff4d6d",textTransform:"uppercase",letterSpacing:".8px",marginBottom:10}}>🔴 Over Budget</div>
-              {over.length?over.map(({cat,diff})=>(
-                <div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,.04)",fontSize:13}}>
-                  <span style={{color:"#e8eaf6"}}>{cat}</span><span style={{color:"#ff4d6d",fontWeight:600}}>+{fmt(diff)}</span>
-                </div>
-              )):<div style={{color:"#5a6490",fontSize:13,padding:"12px 0"}}>All good! 🎉</div>}
-            </div>
-            <div>
-              <div style={{fontSize:11,color:"#00d68f",textTransform:"uppercase",letterSpacing:".8px",marginBottom:10}}>🟢 Under Budget</div>
-              {under.map(({cat,diff})=>(
-                <div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,.04)",fontSize:13}}>
-                  <span style={{color:"#e8eaf6"}}>{cat}</span><span style={{color:"#00d68f",fontWeight:600}}>{fmt(diff)} left</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // ── BUDGET ──
-  const Budget = () => (
-    <div>
-      <div style={S.topbar}>
-        <h2 style={S.h2}>Budget Manager</h2>
-        <button style={S.btnP} onClick={saveBudget}>Save Budget</button>
-      </div>
-      <div style={{...S.sec,maxWidth:580}}>
-        <div style={S.secTitle}>Categories & Monthly Budget</div>
-        {Object.entries(localBudget).map(([cat,amt])=>(
-          <div key={cat} style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:12,alignItems:"center",padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,.04)"}}>
-            <span style={{fontSize:14,color:"#e8eaf6"}}>{cat}</span>
-            <input type="number" value={amt} onChange={e=>setLocalBudget(p=>({...p,[cat]:parseFloat(e.target.value)||0}))}
-              style={{background:"#131840",border:"1px solid rgba(255,255,255,.1)",color:"#e8eaf6",padding:"6px 10px",borderRadius:7,fontSize:13,outline:"none",width:130,fontFamily:"inherit"}}/>
-            <button style={S.btnD} onClick={()=>deleteCategory(cat)}>Remove</button>
-          </div>
-        ))}
-        <div style={{marginTop:18,display:"flex",gap:10,alignItems:"center",paddingTop:16,borderTop:"1px solid rgba(255,255,255,.08)"}}>
-          <input type="text" style={{...S.inp,flex:1}} value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="New category name"/>
-          <input type="number" style={{...S.inp,width:130}} value={newCatAmt} onChange={e=>setNewCatAmt(e.target.value)} placeholder="₹ Budget"/>
-          <button style={S.btnP} onClick={addCategory}>Add</button>
-        </div>
-        {budgetMsg&&<div style={{marginTop:10,fontSize:13,color:budgetMsg.t==="ok"?"#00d68f":"#ff4d6d"}}>{budgetMsg.m}</div>}
-      </div>
-    </div>
-  );
 
   return (
-    <div style={S.app}>
-      <nav style={S.sidebar}>
-        <div style={S.logoWrap}>
-          <div style={S.logoText}>Monefy 💰</div>
-          <div style={S.logoSub}>{session.user.email}</div>
+    <div>
+      <div className="mf-topbar">
+        <h2>Transactions</h2>
+        <div className="mf-filters">
+          <select className="mf-sel" value={m} onChange={e=>setM(+e.target.value)}>{MONTHS.map((mo,i)=><option key={i} value={i}>{mo}</option>)}</select>
+          <select className="mf-sel" value={y} onChange={e=>setY(+e.target.value)}>{YEARS.map(yr=><option key={yr} value={yr}>{yr}</option>)}</select>
         </div>
-        <div style={{padding:"12px 0",flex:1}}>
+      </div>
+      <div className="mf-sec">
+        {txns.length===0
+          ?<div style={{color:"#5a6490",fontSize:13,padding:"32px 0",textAlign:"center"}}>No transactions this month</div>
+          :<div className="mf-table-wrap">
+            <table className="mf-table">
+              <thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Amount</th><th></th></tr></thead>
+              <tbody>{txns.map(t=>(
+                <tr key={t.id}>
+                  <td>{t.date}</td><td style={{color:"#e8eaf6"}}>{t.description}</td>
+                  <td><span className="mf-chip">{t.category}</span></td>
+                  <td style={{color:"#ff4d8d",fontWeight:600}}>{fmt(t.amount)}</td>
+                  <td><button className="mf-btn-d" onClick={()=>del(t.id)}>Delete</button></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>}
+      </div>
+    </div>
+  );
+}
+
+function Charts({ budget, transactions }) {
+  const now = new Date();
+  const [view, setView] = useState("monthly");
+  const [m, setM] = useState(now.getMonth());
+  const [y, setY] = useState(now.getFullYear());
+  const cats = Object.keys(budget);
+  const totalBudgetAll = Object.values(budget).reduce((a,b)=>a+b,0);
+  const txns = view==="monthly" ? transactions.filter(t=>{const d=new Date(t.date);return d.getMonth()===m&&d.getFullYear()===y;}) : transactions.filter(t=>new Date(t.date).getFullYear()===y);
+  const spend={}; txns.forEach(t=>{spend[t.category]=(spend[t.category]||0)+t.amount;});
+  const activeCats=cats.filter(c=>budget[c]>0||(spend[c]||0)>0);
+  const spentCats=activeCats.filter(c=>(spend[c]||0)>0);
+  const dayLabels=view==="monthly"?Array.from({length:31},(_,i)=>String(i+1)):MONTHS_SHORT;
+  const dayData=view==="monthly"?dayLabels.map(d=>{const map={};txns.forEach(t=>{const dd=new Date(t.date).getDate();map[dd]=(map[dd]||0)+t.amount;});return map[+d]||0;}):MONTHS_SHORT.map((_,mi)=>transactions.filter(t=>{const dt=new Date(t.date);return dt.getFullYear()===y&&dt.getMonth()===mi;}).reduce((s,t)=>s+t.amount,0));
+  const monthlyTotals=MONTHS_SHORT.map((_,mi)=>transactions.filter(t=>{const dt=new Date(t.date);return dt.getFullYear()===y&&dt.getMonth()===mi;}).reduce((s,t)=>s+t.amount,0));
+  const over=activeCats.filter(c=>(spend[c]||0)>budget[c]&&budget[c]>0).map(c=>({cat:c,diff:(spend[c]||0)-budget[c]})).sort((a,b)=>b.diff-a.diff);
+  const under=activeCats.filter(c=>(spend[c]||0)<budget[c]&&budget[c]>0).map(c=>({cat:c,diff:budget[c]-(spend[c]||0)})).sort((a,b)=>b.diff-a.diff);
+
+  return (
+    <div>
+      <div className="mf-topbar">
+        <h2>Charts & Insights</h2>
+        <div className="mf-filters">
+          <select className="mf-sel" value={view} onChange={e=>setView(e.target.value)}><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select>
+          {view==="monthly"&&<select className="mf-sel" value={m} onChange={e=>setM(+e.target.value)}>{MONTHS.map((mo,i)=><option key={i} value={i}>{mo}</option>)}</select>}
+          <select className="mf-sel" value={y} onChange={e=>setY(+e.target.value)}>{YEARS.map(yr=><option key={yr} value={yr}>{yr}</option>)}</select>
+        </div>
+      </div>
+      <div className="mf-sec">
+        <div className="mf-sec-title">Budget vs Actual (₹)</div>
+        {activeCats.length?<BarChart labels={activeCats} datasets={[{label:"Budget",data:activeCats.map(c=>budget[c]||0),color:"#00e5cc"},{label:"Actual",data:activeCats.map(c=>spend[c]||0),colors:activeCats.map(c=>(spend[c]||0)>(budget[c]||0)?"#ff4d6d":"#00d68f"),color:"#00d68f"}]} height={280}/>:<div style={{color:"#5a6490",fontSize:13}}>No data yet</div>}
+      </div>
+      <div className="mf-chart-2col">
+        <div className="mf-sec">
+          <div className="mf-sec-title">Spending by Category</div>
+          {spentCats.length?<DonutChart labels={spentCats} data={spentCats.map(c=>spend[c])} colors={PIE_COLORS}/>:<div style={{color:"#5a6490",fontSize:13,padding:"20px 0"}}>No spending data</div>}
+        </div>
+        <div className="mf-sec">
+          <div className="mf-sec-title">{view==="monthly"?"Day-wise":"Month-wise"} Spending</div>
+          <BarChart labels={dayLabels} datasets={[{label:"Spent",data:dayData,color:"#ffb830"}]} height={220}/>
+        </div>
+      </div>
+      <div className="mf-sec">
+        <div className="mf-sec-title">Monthly Trend {y}</div>
+        <LineChart labels={MONTHS_SHORT} datasets={[{label:"Spent",data:monthlyTotals,color:"#ff4d8d",fill:true},{label:"Budget",data:MONTHS_SHORT.map(()=>totalBudgetAll),color:"#00e5cc",dash:true}]} height={200}/>
+      </div>
+      <div className="mf-sec">
+        <div className="mf-sec-title">Over / Under Budget Summary</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+          <div>
+            <div style={{fontSize:11,color:"#ff4d6d",textTransform:"uppercase",letterSpacing:".8px",marginBottom:10}}>🔴 Over Budget</div>
+            {over.length?over.map(({cat,diff})=>(<div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,.04)",fontSize:13}}><span style={{color:"#e8eaf6"}}>{cat}</span><span style={{color:"#ff4d6d",fontWeight:600}}>+{fmt(diff)}</span></div>)):<div style={{color:"#5a6490",fontSize:13,padding:"12px 0"}}>All good! 🎉</div>}
+          </div>
+          <div>
+            <div style={{fontSize:11,color:"#00d68f",textTransform:"uppercase",letterSpacing:".8px",marginBottom:10}}>🟢 Under Budget</div>
+            {under.map(({cat,diff})=>(<div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,.04)",fontSize:13}}><span style={{color:"#e8eaf6"}}>{cat}</span><span style={{color:"#00d68f",fontWeight:600}}>{fmt(diff)} left</span></div>))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BudgetPage({ budget, onSaved }) {
+  const [local, setLocal] = useState({...budget});
+  const [newCat, setNewCat] = useState("");
+  const [newAmt, setNewAmt] = useState("");
+  const [msg, setMsg] = useState(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(()=>{setLocal({...budget});},[budget]);
+
+  const save = async () => {
+    setSaving(true);
+    const {data:{session}} = await supabase.auth.getSession();
+    const rows = Object.entries(local).map(([category,amount])=>({category,amount,user_id:session.user.id}));
+    const {error} = await supabase.from("budget").upsert(rows,{onConflict:"category,user_id"});
+    setSaving(false);
+    if (error){setMsg({t:"err",m:"Error saving."});return;}
+    setMsg({t:"ok",m:"Budget saved! ✓"});
+    onSaved();
+    setTimeout(()=>setMsg(null),2500);
+  };
+
+  const addCat = async () => {
+    if (!newCat.trim()){setMsg({t:"err",m:"Enter category name"});return;}
+    if (local[newCat.trim()]!==undefined){setMsg({t:"err",m:"Already exists"});return;}
+    const {data:{session}} = await supabase.auth.getSession();
+    const {error} = await supabase.from("budget").insert({category:newCat.trim(),amount:parseFloat(newAmt)||0,user_id:session.user.id});
+    if (error){setMsg({t:"err",m:"Error adding."});return;}
+    setNewCat(""); setNewAmt("");
+    setMsg({t:"ok",m:"Category added!"});
+    onSaved();
+    setTimeout(()=>setMsg(null),2500);
+  };
+
+  const delCat = async (cat) => {
+    if (!window.confirm(`Remove "${cat}"?`)) return;
+    const {data:{session}} = await supabase.auth.getSession();
+    await supabase.from("budget").delete().eq("category",cat).eq("user_id",session.user.id);
+    onSaved();
+  };
+
+  return (
+    <div>
+      <div className="mf-topbar">
+        <h2>Budget Manager</h2>
+        <button className="mf-btn-p" onClick={save} disabled={saving}>{saving?"Saving…":"Save Budget"}</button>
+      </div>
+      {msg&&<div className={msg.t==="ok"?"mf-msg-ok":"mf-msg-err"} style={{marginBottom:14}}>{msg.m}</div>}
+      <div className="mf-sec" style={{maxWidth:600}}>
+        <div className="mf-sec-title">Categories & Monthly Budget</div>
+        {Object.entries(local).map(([cat,amt])=>(
+          <div key={cat} className="mf-budget-row">
+            <span style={{fontSize:14,color:"#e8eaf6"}}>{cat}</span>
+            <input type="number" className="mf-budget-inp" value={amt} onChange={e=>setLocal(p=>({...p,[cat]:parseFloat(e.target.value)||0}))}/>
+            <button className="mf-btn-d" onClick={()=>delCat(cat)}>Remove</button>
+          </div>
+        ))}
+        <div className="mf-add-row" style={{marginTop:18,display:"flex",gap:10,alignItems:"center",paddingTop:16,borderTop:"1px solid rgba(255,255,255,.08)",flexWrap:"wrap"}}>
+          <input type="text" className="mf-inp" value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="New category name" style={{flex:1,minWidth:160}}/>
+          <input type="number" className="mf-inp" value={newAmt} onChange={e=>setNewAmt(e.target.value)} placeholder="₹ Budget" style={{width:120}}/>
+          <button className="mf-btn-p" onClick={addCat}>Add</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Profile Page ── */
+function ProfilePage({ session, profile, onProfileUpdated }) {
+  const [name, setName] = useState(profile?.display_name||"");
+  const [newPass, setNewPass] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const [nameMsg, setNameMsg] = useState(null);
+  const [passMsg, setPassMsg] = useState(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(()=>{setName(profile?.display_name||"");},[profile]);
+
+  const saveName = async () => {
+    if (!name.trim()){setNameMsg({t:"err",m:"Name cannot be empty"});return;}
+    setSaving(true);
+    const {error} = await supabase.from("profiles").upsert({id:session.user.id,display_name:name.trim(),email:session.user.email});
+    await supabase.auth.updateUser({data:{display_name:name.trim()}});
+    setSaving(false);
+    if (error){setNameMsg({t:"err",m:"Error updating name."});return;}
+    setNameMsg({t:"ok",m:"Name updated! ✓"});
+    onProfileUpdated();
+    setTimeout(()=>setNameMsg(null),2500);
+  };
+
+  const savePass = async () => {
+    if (!newPass||!confirmPass){setPassMsg({t:"err",m:"Fill both password fields"});return;}
+    if (newPass!==confirmPass){setPassMsg({t:"err",m:"Passwords don't match"});return;}
+    if (newPass.length<6){setPassMsg({t:"err",m:"Minimum 6 characters"});return;}
+    setSaving(true);
+    const {error} = await supabase.auth.updateUser({password:newPass});
+    setSaving(false);
+    if (error){setPassMsg({t:"err",m:"Error updating password."});return;}
+    setPassMsg({t:"ok",m:"Password updated! ✓"});
+    setNewPass(""); setConfirmPass("");
+    setTimeout(()=>setPassMsg(null),2500);
+  };
+
+  const color = avatarColor(profile?.display_name||"");
+  return (
+    <div>
+      <div className="mf-topbar"><h2>Profile</h2></div>
+      <div className="mf-sec" style={{maxWidth:480,textAlign:"center"}}>
+        <div className="mf-profile-avatar" style={{background:color+"22",border:`2px solid ${color}44`}}>
+          <span style={{color}}>{avatarInitial(profile?.display_name||session.user.email)}</span>
+        </div>
+        <div style={{fontSize:18,fontWeight:700,marginBottom:4}}>{profile?.display_name||"—"}</div>
+        <div style={{fontSize:13,color:"#5a6490",marginBottom:20}}>{session.user.email}</div>
+
+        <div className="mf-divider"/>
+        <div style={{textAlign:"left"}}>
+          <div className="mf-sec-title">Update Display Name</div>
+          <input type="text" className="mf-inp" value={name} onChange={e=>setName(e.target.value)} placeholder="Your name" style={{marginBottom:10}}/>
+          <button className="mf-btn-p" onClick={saveName} disabled={saving}>Save Name</button>
+          {nameMsg&&<div className={nameMsg.t==="ok"?"mf-msg-ok":"mf-msg-err"}>{nameMsg.m}</div>}
+        </div>
+
+        <div className="mf-divider"/>
+        <div style={{textAlign:"left"}}>
+          <div className="mf-sec-title">Change Password</div>
+          <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:10}}>
+            <input type="password" className="mf-inp" value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="New password"/>
+            <input type="password" className="mf-inp" value={confirmPass} onChange={e=>setConfirmPass(e.target.value)} placeholder="Confirm new password"/>
+          </div>
+          <button className="mf-btn-p" onClick={savePass} disabled={saving}>Update Password</button>
+          {passMsg&&<div className={passMsg.t==="ok"?"mf-msg-ok":"mf-msg-err"}>{passMsg.m}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Feedback Board ── */
+const TAG_LABELS = { feature:"✨ Feature", bug:"🐛 Bug", complaint:"😤 Complaint", other:"💬 Other" };
+
+function FeedbackBoard({ session, profile }) {
+  const [threads, setThreads] = useState([]);
+  const [openThread, setOpenThread] = useState(null);
+  const [showNew, setShowNew] = useState(false);
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [tag, setTag] = useState("feature");
+  const [posting, setPosting] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const loadThreads = useCallback(async () => {
+    const {data} = await supabase.from("feedback_threads").select("*").order("created_at",{ascending:false});
+    if (data) setThreads(data);
+  },[]);
+
+  useEffect(()=>{ loadThreads(); },[loadThreads]);
+
+  const postThread = async () => {
+    if (!title.trim()||!body.trim()){setMsg({t:"err",m:"Fill title and description"});return;}
+    setPosting(true);
+    const {error} = await supabase.from("feedback_threads").insert({
+      title:title.trim(), body:body.trim(), tag,
+      author_id:session.user.id,
+      author_name:profile?.display_name||session.user.email,
+    });
+    setPosting(false);
+    if (error){setMsg({t:"err",m:"Error posting."});return;}
+    setTitle(""); setBody(""); setTag("feature"); setShowNew(false);
+    loadThreads();
+  };
+
+  if (openThread) return <ThreadDetail thread={openThread} session={session} profile={profile} onBack={()=>{setOpenThread(null);loadThreads();}}/>;
+
+  return (
+    <div>
+      <div className="mf-topbar">
+        <h2>Feedback Board</h2>
+        <button className="mf-btn-p" onClick={()=>setShowNew(s=>!s)}>{showNew?"Cancel":"+ New Post"}</button>
+      </div>
+
+      {showNew && (
+        <div className="mf-sec" style={{maxWidth:600,marginBottom:20}}>
+          <div className="mf-sec-title">Create New Thread</div>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div className="mf-form-group"><label className="mf-form-label">Title</label><input type="text" className="mf-inp" value={title} onChange={e=>setTitle(e.target.value)} placeholder="Short summary of your post"/></div>
+            <div className="mf-form-group"><label className="mf-form-label">Description</label><textarea className="mf-textarea" value={body} onChange={e=>setBody(e.target.value)} placeholder="Describe your feature request, bug, or feedback…"/></div>
+            <div className="mf-form-group">
+              <label className="mf-form-label">Category</label>
+              <select className="mf-inp" style={{cursor:"pointer"}} value={tag} onChange={e=>setTag(e.target.value)}>
+                <option value="feature">✨ Feature Request</option>
+                <option value="bug">🐛 Bug Report</option>
+                <option value="complaint">😤 Complaint</option>
+                <option value="other">💬 Other</option>
+              </select>
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <button className="mf-btn-p" onClick={postThread} disabled={posting}>{posting?"Posting…":"Post"}</button>
+              <button className="mf-btn-g" onClick={()=>setShowNew(false)}>Cancel</button>
+            </div>
+            {msg&&<div className={msg.t==="ok"?"mf-msg-ok":"mf-msg-err"}>{msg.m}</div>}
+          </div>
+        </div>
+      )}
+
+      {threads.length===0
+        ?<div className="mf-sec" style={{textAlign:"center",color:"#5a6490",padding:"40px 0"}}>No posts yet. Be the first to share feedback!</div>
+        :threads.map(t=>(
+          <div key={t.id} className="mf-thread-card" onClick={()=>setOpenThread(t)}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+              <span className={`mf-tag mf-tag-${t.tag}`}>{TAG_LABELS[t.tag]||t.tag}</span>
+            </div>
+            <div className="mf-thread-title">{t.title}</div>
+            <div className="mf-thread-body">{t.body}</div>
+            <div className="mf-thread-meta">
+              <span>👤 {t.author_name}</span>
+              <span>🕐 {timeAgo(t.created_at)}</span>
+              <span>💬 {t.comment_count||0} comments</span>
+            </div>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+function ThreadDetail({ thread, session, profile, onBack }) {
+  const [comments, setComments] = useState([]);
+  const [text, setText] = useState("");
+  const [posting, setPosting] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const loadComments = useCallback(async () => {
+    const {data} = await supabase.from("feedback_comments").select("*").eq("thread_id",thread.id).order("created_at",{ascending:true});
+    if (data) setComments(data);
+  },[thread.id]);
+
+  useEffect(()=>{ loadComments(); },[loadComments]);
+
+  const postComment = async () => {
+    if (!text.trim()){setMsg({t:"err",m:"Write something first"});return;}
+    setPosting(true);
+    const {error} = await supabase.from("feedback_comments").insert({
+      thread_id:thread.id, body:text.trim(),
+      author_id:session.user.id,
+      author_name:profile?.display_name||session.user.email,
+    });
+    if (!error) {
+      await supabase.from("feedback_threads").update({comment_count:(thread.comment_count||0)+comments.length+1}).eq("id",thread.id);
+    }
+    setPosting(false);
+    if (error){setMsg({t:"err",m:"Error posting comment."});return;}
+    setText("");
+    loadComments();
+  };
+
+  return (
+    <div>
+      <div className="mf-back-btn" onClick={onBack}>← Back to Board</div>
+
+      <div className="mf-sec" style={{marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+          <span className={`mf-tag mf-tag-${thread.tag}`}>{TAG_LABELS[thread.tag]||thread.tag}</span>
+        </div>
+        <h3 style={{fontSize:18,fontWeight:700,marginBottom:10,color:"#e8eaf6"}}>{thread.title}</h3>
+        <p style={{fontSize:14,color:"#9ba5c9",lineHeight:1.6,marginBottom:14}}>{thread.body}</p>
+        <div style={{display:"flex",gap:14,fontSize:11,color:"#5a6490"}}>
+          <span style={{display:"flex",alignItems:"center",gap:6}}>
+            <div className="mf-avatar" style={{width:22,height:22,fontSize:10,background:avatarColor(thread.author_name)+"22",color:avatarColor(thread.author_name)}}>{avatarInitial(thread.author_name)}</div>
+            {thread.author_name}
+          </span>
+          <span>{timeAgo(thread.created_at)}</span>
+        </div>
+      </div>
+
+      <div className="mf-sec">
+        <div className="mf-sec-title">{comments.length} Comment{comments.length!==1?"s":""}</div>
+        {comments.length===0&&<div style={{color:"#5a6490",fontSize:13,padding:"12px 0"}}>No comments yet. Add the first one!</div>}
+        {comments.map(c=>(
+          <div key={c.id} className="mf-comment">
+            <div className="mf-avatar" style={{background:avatarColor(c.author_name)+"22",color:avatarColor(c.author_name)}}>
+              {avatarInitial(c.author_name)}
+            </div>
+            <div style={{flex:1}}>
+              <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:5}}>
+                <span style={{fontSize:13,fontWeight:600,color:"#e8eaf6"}}>{c.author_name}</span>
+                <span style={{fontSize:11,color:"#5a6490"}}>{timeAgo(c.created_at)}</span>
+                {c.author_id===session.user.id&&<span style={{fontSize:10,color:"#5a6490",background:"rgba(255,255,255,.06)",padding:"1px 6px",borderRadius:4}}>You</span>}
+              </div>
+              <p style={{fontSize:13,color:"#9ba5c9",lineHeight:1.6}}>{c.body}</p>
+            </div>
+          </div>
+        ))}
+
+        <div style={{marginTop:20,paddingTop:16,borderTop:"1px solid rgba(255,255,255,.06)"}}>
+          <div className="mf-sec-title">Add a Comment</div>
+          <textarea className="mf-textarea" value={text} onChange={e=>setText(e.target.value)} placeholder="Share your thoughts…" style={{marginBottom:10}}/>
+          <button className="mf-btn-p" onClick={postComment} disabled={posting}>{posting?"Posting…":"Post Comment"}</button>
+          {msg&&<div className={msg.t==="ok"?"mf-msg-ok":"mf-msg-err"}>{msg.m}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══ ROOT APP ══ */
+export default function App() {
+  const [session, setSession] = useState(undefined);
+  const [profile, setProfile] = useState(null);
+  const [page, setPage] = useState("dashboard");
+  const [budget, setBudget] = useState({});
+  const [transactions, setTransactions] = useState([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const now = new Date();
+  const [selMonth, setSelMonth] = useState(now.getMonth());
+  const [selYear, setSelYear] = useState(now.getFullYear());
+
+  useEffect(()=>{
+    const el=document.createElement("style"); el.textContent=CSS; document.head.appendChild(el);
+    return ()=>document.head.removeChild(el);
+  },[]);
+
+  useEffect(()=>{
+    supabase.auth.getSession().then(({data})=>setSession(data.session??null));
+    const {data:{subscription}}=supabase.auth.onAuthStateChange((_,s)=>setSession(s));
+    return ()=>subscription.unsubscribe();
+  },[]);
+
+  useEffect(()=>{ if(session){loadBudget();loadTransactions();loadProfile();} },[session]);
+
+  const loadProfile = useCallback(async()=>{
+    if (!session) return;
+    const {data}=await supabase.from("profiles").select("*").eq("id",session.user.id).single();
+    if (data) setProfile(data);
+    else {
+      // auto-create profile from auth metadata
+      const name = session.user.user_metadata?.display_name||session.user.email.split("@")[0];
+      await supabase.from("profiles").upsert({id:session.user.id,display_name:name,email:session.user.email});
+      setProfile({display_name:name,email:session.user.email});
+    }
+  },[session]);
+
+  const loadBudget = useCallback(async()=>{
+    const {data}=await supabase.from("budget").select("*").order("category");
+    if (data){const obj={};data.forEach(r=>{obj[r.category]=r.amount;});setBudget(obj);}
+  },[]);
+
+  const loadTransactions = useCallback(async()=>{
+    const {data}=await supabase.from("transactions").select("*").order("date",{ascending:false});
+    if (data) setTransactions(data);
+  },[]);
+
+  const signOut = async()=>{await supabase.auth.signOut();setSession(null);setProfile(null);setBudget({});setTransactions([]);};
+  const navigate = (p)=>{setPage(p);setSidebarOpen(false);};
+
+  if (session===undefined) return <Loader/>;
+  if (session===null) return <AuthScreen onLogin={setSession}/>;
+
+  const NAV = [
+    {id:"dashboard",icon:"📊",label:"Dashboard"},
+    {id:"add",icon:"➕",label:"Add"},
+    {id:"transactions",icon:"📋",label:"Transactions"},
+    {id:"charts",icon:"📈",label:"Charts"},
+    {id:"budget",icon:"🎯",label:"Budget"},
+    {id:"feedback",icon:"💬",label:"Feedback"},
+    {id:"profile",icon:"👤",label:"Profile"},
+  ];
+
+  return (
+    <div className="mf-app">
+      <div className={`mf-overlay ${sidebarOpen?"open":""}`} onClick={()=>setSidebarOpen(false)}/>
+      <button className="mf-hamburger" onClick={()=>setSidebarOpen(s=>!s)}>☰</button>
+
+      <nav className={`mf-sidebar ${sidebarOpen?"open":""}`}>
+        <div className="mf-logo-wrap">
+          <div><span className="mf-logo">Monefy</span><span style={{marginLeft:6,fontSize:20}}>💰</span></div>
+          <div className="mf-logo-sub">{profile?.display_name||session.user.email}</div>
+        </div>
+        <div className="mf-nav">
           {NAV.map(n=>(
-            <div key={n.id} style={S.navItem(page===n.id)} onClick={()=>setPage(n.id)}>
-              <span style={{fontSize:15}}>{n.icon}</span> {n.label}
+            <div key={n.id} className={`mf-nav-item ${page===n.id?"active":""}`} onClick={()=>navigate(n.id)}>
+              <span className="mf-nav-icon">{n.icon}</span> {n.label}
             </div>
           ))}
         </div>
-        <div style={{padding:"16px 20px",borderTop:"1px solid rgba(255,255,255,.06)"}}>
-          <div onClick={signOut} style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",color:"#5a6490",fontSize:13,padding:"6px 0"}}>
-            <span>🚪</span> Sign Out
-          </div>
-        </div>
+        <div className="mf-signout" onClick={signOut}>🚪 Sign Out</div>
       </nav>
 
-      <main style={S.main}>
-        {page==="dashboard"    && <Dashboard/>}
-        {page==="add"          && <AddExpense/>}
-        {page==="transactions" && <Transactions/>}
-        {page==="charts"       && <Charts/>}
-        {page==="budget"       && <Budget/>}
+      <main className="mf-main">
+        {page==="dashboard"    && <Dashboard budget={budget} transactions={transactions} selMonth={selMonth} setSelMonth={setSelMonth} selYear={selYear} setSelYear={setSelYear}/>}
+        {page==="add"          && <AddExpense budget={budget} onSaved={loadTransactions}/>}
+        {page==="transactions" && <Transactions transactions={transactions} onDeleted={loadTransactions}/>}
+        {page==="charts"       && <Charts budget={budget} transactions={transactions}/>}
+        {page==="budget"       && <BudgetPage budget={budget} onSaved={loadBudget}/>}
+        {page==="feedback"     && <FeedbackBoard session={session} profile={profile}/>}
+        {page==="profile"      && <ProfilePage session={session} profile={profile} onProfileUpdated={loadProfile}/>}
       </main>
 
-      {/* Mobile bottom nav */}
-      <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#0d1130",borderTop:"1px solid rgba(255,255,255,.07)",zIndex:200,padding:"6px 0",display:"flex",justifyContent:"space-around"}}>
-        {NAV.map(n=>(
-          <div key={n.id} onClick={()=>setPage(n.id)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"5px 8px",cursor:"pointer",color:page===n.id?"#00e5cc":"#5a6490",fontSize:9}}>
-            <span style={{fontSize:18}}>{n.icon}</span>{n.label}
-          </div>
-        ))}
+      <div className="mf-bottom-nav">
+        <div className="mf-bottom-nav-inner">
+          {NAV.map(n=>(
+            <div key={n.id} className={`mf-bottom-item ${page===n.id?"active":""}`} onClick={()=>navigate(n.id)}>
+              <span className="mf-bottom-icon">{n.icon}</span>{n.label}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
