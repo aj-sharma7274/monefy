@@ -336,7 +336,10 @@ function AuthScreen({ onLogin }) {
       await supabase.from("profiles").upsert({ id: data.user.id, display_name: name.trim(), email });
     }
     if (data.session) { onLogin(data.session); }
-    else { setSuccess("Account created! You can now sign in."); setTab("login"); setName(""); setPassword(""); }
+    else {
+      setSuccess("✅ Account created! Please check your email to confirm, then sign in.");
+      setTab("login"); setName(""); setPassword("");
+    }
   };
 
   return (
@@ -680,6 +683,23 @@ function BudgetPage({ budget, onSaved }) {
   );
 }
 
+/* ── Admin check — reads from Supabase profile, no hardcoding ── */
+const isAdmin = (profile) => profile?.is_admin === true;
+
+const PRESET_AVATARS = ["🧑","👩","👨","🧔","👩‍💻","👨‍💻","🧑‍🎨","👩‍🎨","🦊","🐯","🐻","🦁","🐸","🐧","🦋","🌟","🔥","💎","🚀","🎯"];
+
+/* ── Avatar component — shows photo, preset emoji, or initial ── */
+function Avatar({ profile, size=36, fontSize=15 }) {
+  const color = avatarColor(profile?.display_name||"?");
+  if (profile?.avatar_url) {
+    return <img src={profile.avatar_url} alt="avatar" style={{width:size,height:size,borderRadius:"50%",objectFit:"cover",flexShrink:0,border:`2px solid ${color}44`}}/>;
+  }
+  if (profile?.avatar_emoji) {
+    return <div style={{width:size,height:size,borderRadius:"50%",background:color+"22",border:`2px solid ${color}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*0.5,flexShrink:0}}>{profile.avatar_emoji}</div>;
+  }
+  return <div style={{width:size,height:size,borderRadius:"50%",background:color+"22",border:`2px solid ${color}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:fontSize,fontWeight:700,color,flexShrink:0}}>{avatarInitial(profile?.display_name||"?")}</div>;
+}
+
 /* ── Profile Page ── */
 function ProfilePage({ session, profile, onProfileUpdated }) {
   const [name, setName] = useState(profile?.display_name||"");
@@ -687,27 +707,29 @@ function ProfilePage({ session, profile, onProfileUpdated }) {
   const [confirmPass, setConfirmPass] = useState("");
   const [nameMsg, setNameMsg] = useState(null);
   const [passMsg, setPassMsg] = useState(null);
+  const [avatarMsg, setAvatarMsg] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [showPresets, setShowPresets] = useState(false);
   useEffect(()=>{setName(profile?.display_name||"");},[profile]);
 
   const saveName = async () => {
     if (!name.trim()){setNameMsg({t:"err",m:"Name cannot be empty"});return;}
     setSaving(true);
-    const {error} = await supabase.from("profiles").upsert({id:session.user.id,display_name:name.trim(),email:session.user.email});
+    await supabase.from("profiles").upsert({id:session.user.id,display_name:name.trim(),email:session.user.email,avatar_url:profile?.avatar_url||null,avatar_emoji:profile?.avatar_emoji||null,is_admin:profile?.is_admin||false});
     await supabase.auth.updateUser({data:{display_name:name.trim()}});
     setSaving(false);
-    if (error){setNameMsg({t:"err",m:"Error updating name."});return;}
     setNameMsg({t:"ok",m:"Name updated! ✓"});
     onProfileUpdated();
     setTimeout(()=>setNameMsg(null),2500);
   };
 
   const savePass = async () => {
-    if (!newPass||!confirmPass){setPassMsg({t:"err",m:"Fill both password fields"});return;}
+    if (!newPass||!confirmPass){setPassMsg({t:"err",m:"Fill both fields"});return;}
     if (newPass!==confirmPass){setPassMsg({t:"err",m:"Passwords don't match"});return;}
-    if (newPass.length<6){setPassMsg({t:"err",m:"Minimum 6 characters"});return;}
+    if (newPass.length<6){setPassMsg({t:"err",m:"Min 6 characters"});return;}
     setSaving(true);
-    const {error} = await supabase.auth.updateUser({password:newPass});
+    const {error}=await supabase.auth.updateUser({password:newPass});
     setSaving(false);
     if (error){setPassMsg({t:"err",m:"Error updating password."});return;}
     setPassMsg({t:"ok",m:"Password updated! ✓"});
@@ -715,19 +737,81 @@ function ProfilePage({ session, profile, onProfileUpdated }) {
     setTimeout(()=>setPassMsg(null),2500);
   };
 
-  const color = avatarColor(profile?.display_name||"");
+  const uploadPhoto = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    if (file.size > 2*1024*1024){setAvatarMsg({t:"err",m:"Max file size is 2MB"});return;}
+    setUploading(true);
+    const ext = file.name.split(".").pop();
+    const path = `avatars/${session.user.id}.${ext}`;
+    const {error:upErr} = await supabase.storage.from("avatars").upload(path, file, {upsert:true});
+    if (upErr){setAvatarMsg({t:"err",m:"Upload failed. Make sure avatars bucket exists."});setUploading(false);return;}
+    const {data} = supabase.storage.from("avatars").getPublicUrl(path);
+    const url = data.publicUrl+"?t="+Date.now();
+    await supabase.from("profiles").upsert({id:session.user.id,display_name:profile?.display_name||name,email:session.user.email,avatar_url:url,avatar_emoji:null});
+    setUploading(false);
+    setAvatarMsg({t:"ok",m:"Photo updated! ✓"});
+    onProfileUpdated();
+    setTimeout(()=>setAvatarMsg(null),2500);
+  };
+
+  const pickEmoji = async (emoji) => {
+    await supabase.from("profiles").upsert({id:session.user.id,display_name:profile?.display_name||name,email:session.user.email,avatar_url:null,avatar_emoji:emoji});
+    setShowPresets(false);
+    setAvatarMsg({t:"ok",m:"Avatar updated! ✓"});
+    onProfileUpdated();
+    setTimeout(()=>setAvatarMsg(null),2500);
+  };
+
+  const removeAvatar = async () => {
+    await supabase.from("profiles").upsert({id:session.user.id,display_name:profile?.display_name||name,email:session.user.email,avatar_url:null,avatar_emoji:null});
+    setAvatarMsg({t:"ok",m:"Avatar removed"});
+    onProfileUpdated();
+    setTimeout(()=>setAvatarMsg(null),2500);
+  };
+
   return (
     <div>
-      <div className="mf-topbar"><h2>Profile</h2></div>
-      <div className="mf-sec" style={{maxWidth:480,textAlign:"center"}}>
-        <div className="mf-profile-avatar" style={{background:color+"22",border:`2px solid ${color}44`}}>
-          <span style={{color}}>{avatarInitial(profile?.display_name||session.user.email)}</span>
+      <div className="mf-topbar">
+        <h2>Profile</h2>
+        {isAdmin(profile)&&<span style={{background:"rgba(255,184,48,.15)",color:"#ffb830",padding:"4px 12px",borderRadius:99,fontSize:12,fontWeight:600}}>👑 Admin</span>}
+      </div>
+      <div className="mf-sec" style={{maxWidth:480}}>
+        {/* Avatar section */}
+        <div style={{textAlign:"center",marginBottom:20}}>
+          <div style={{position:"relative",display:"inline-block",marginBottom:12}}>
+            <Avatar profile={profile} size={80} fontSize={30}/>
+            {(profile?.avatar_url||profile?.avatar_emoji)&&(
+              <button onClick={removeAvatar} style={{position:"absolute",top:-4,right:-4,width:20,height:20,borderRadius:"50%",background:"#ff4d6d",border:"none",cursor:"pointer",fontSize:11,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+            )}
+          </div>
+          <div style={{fontSize:18,fontWeight:700,marginBottom:2}}>{profile?.display_name||"—"}</div>
+          <div style={{fontSize:13,color:"#5a6490",marginBottom:16}}>{session.user.email}</div>
+
+          <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
+            <label style={{padding:"8px 16px",borderRadius:8,border:"1px solid rgba(0,229,204,.3)",background:"rgba(0,229,204,.08)",color:"#00e5cc",fontSize:13,cursor:"pointer",fontWeight:500}}>
+              {uploading?"Uploading…":"📷 Upload Photo"}
+              <input type="file" accept="image/*" onChange={uploadPhoto} style={{display:"none"}} disabled={uploading}/>
+            </label>
+            <button onClick={()=>setShowPresets(s=>!s)} style={{padding:"8px 16px",borderRadius:8,border:"1px solid rgba(167,139,250,.3)",background:"rgba(167,139,250,.08)",color:"#a78bfa",fontSize:13,cursor:"pointer",fontWeight:500}}>
+              😀 Pick Emoji
+            </button>
+          </div>
+
+          {showPresets&&(
+            <div style={{marginTop:14,padding:14,background:"rgba(255,255,255,.04)",borderRadius:12,border:"1px solid rgba(255,255,255,.08)"}}>
+              <div style={{fontSize:11,color:"#5a6490",textTransform:"uppercase",letterSpacing:".7px",marginBottom:10}}>Choose an avatar</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center"}}>
+                {PRESET_AVATARS.map(e=>(
+                  <button key={e} onClick={()=>pickEmoji(e)} style={{width:40,height:40,borderRadius:8,border:"1px solid rgba(255,255,255,.1)",background:"rgba(255,255,255,.04)",cursor:"pointer",fontSize:22,display:"flex",alignItems:"center",justifyContent:"center",transition:"background .15s"}}>{e}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          {avatarMsg&&<div className={avatarMsg.t==="ok"?"mf-msg-ok":"mf-msg-err"} style={{marginTop:10}}>{avatarMsg.m}</div>}
         </div>
-        <div style={{fontSize:18,fontWeight:700,marginBottom:4}}>{profile?.display_name||"—"}</div>
-        <div style={{fontSize:13,color:"#5a6490",marginBottom:20}}>{session.user.email}</div>
 
         <div className="mf-divider"/>
-        <div style={{textAlign:"left"}}>
+        <div>
           <div className="mf-sec-title">Update Display Name</div>
           <input type="text" className="mf-inp" value={name} onChange={e=>setName(e.target.value)} placeholder="Your name" style={{marginBottom:10}}/>
           <button className="mf-btn-p" onClick={saveName} disabled={saving}>Save Name</button>
@@ -735,7 +819,7 @@ function ProfilePage({ session, profile, onProfileUpdated }) {
         </div>
 
         <div className="mf-divider"/>
-        <div style={{textAlign:"left"}}>
+        <div>
           <div className="mf-sec-title">Change Password</div>
           <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:10}}>
             <input type="password" className="mf-inp" value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="New password"/>
@@ -761,6 +845,7 @@ function FeedbackBoard({ session, profile }) {
   const [tag, setTag] = useState("feature");
   const [posting, setPosting] = useState(false);
   const [msg, setMsg] = useState(null);
+  const admin = isAdmin(profile);
 
   const loadThreads = useCallback(async () => {
     const {data} = await supabase.from("feedback_threads").select("*").order("created_at",{ascending:false});
@@ -780,6 +865,14 @@ function FeedbackBoard({ session, profile }) {
     setPosting(false);
     if (error){setMsg({t:"err",m:"Error posting."});return;}
     setTitle(""); setBody(""); setTag("feature"); setShowNew(false);
+    loadThreads();
+  };
+
+  const deleteThread = async (e, id) => {
+    e.stopPropagation();
+    if (!window.confirm("Delete this post?")) return;
+    await supabase.from("feedback_comments").delete().eq("thread_id",id);
+    await supabase.from("feedback_threads").delete().eq("id",id);
     loadThreads();
   };
 
@@ -820,15 +913,19 @@ function FeedbackBoard({ session, profile }) {
         ?<div className="mf-sec" style={{textAlign:"center",color:"#5a6490",padding:"40px 0"}}>No posts yet. Be the first to share feedback!</div>
         :threads.map(t=>(
           <div key={t.id} className="mf-thread-card" onClick={()=>setOpenThread(t)}>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
               <span className={`mf-tag mf-tag-${t.tag}`}>{TAG_LABELS[t.tag]||t.tag}</span>
+              {(admin||t.author_id===session.user.id)&&(
+                <button className="mf-btn-d" style={{padding:"3px 10px",fontSize:11}} onClick={(e)=>deleteThread(e,t.id)}>🗑 Delete</button>
+              )}
             </div>
             <div className="mf-thread-title">{t.title}</div>
             <div className="mf-thread-body">{t.body}</div>
             <div className="mf-thread-meta">
-              <span>👤 {t.author_name}</span>
+              <span>👤 {t.author_name}{admin&&t.author_id!==session.user.id&&" "}</span>
               <span>🕐 {timeAgo(t.created_at)}</span>
               <span>💬 {t.comment_count||0} comments</span>
+              {admin&&<span style={{color:"#ffb830",fontSize:10}}>👑 admin view</span>}
             </div>
           </div>
         ))}
@@ -841,10 +938,20 @@ function ThreadDetail({ thread, session, profile, onBack }) {
   const [text, setText] = useState("");
   const [posting, setPosting] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [profiles, setProfiles] = useState({});
+  const admin = isAdmin(profile);
 
   const loadComments = useCallback(async () => {
     const {data} = await supabase.from("feedback_comments").select("*").eq("thread_id",thread.id).order("created_at",{ascending:true});
-    if (data) setComments(data);
+    if (data) {
+      setComments(data);
+      // load profiles for avatars
+      const ids=[...new Set(data.map(c=>c.author_id))];
+      if (ids.length) {
+        const {data:profs} = await supabase.from("profiles").select("*").in("id",ids);
+        if (profs) { const map={}; profs.forEach(p=>{map[p.id]=p;}); setProfiles(map); }
+      }
+    }
   },[thread.id]);
 
   useEffect(()=>{ loadComments(); },[loadComments]);
@@ -857,31 +964,48 @@ function ThreadDetail({ thread, session, profile, onBack }) {
       author_id:session.user.id,
       author_name:profile?.display_name||session.user.email,
     });
-    if (!error) {
-      await supabase.from("feedback_threads").update({comment_count:(thread.comment_count||0)+comments.length+1}).eq("id",thread.id);
-    }
+    if (!error) await supabase.from("feedback_threads").update({comment_count:(thread.comment_count||0)+comments.length+1}).eq("id",thread.id);
     setPosting(false);
-    if (error){setMsg({t:"err",m:"Error posting comment."});return;}
-    setText("");
+    if (error){setMsg({t:"err",m:"Error posting."});return;}
+    setText(""); loadComments();
+  };
+
+  const deleteComment = async (id) => {
+    if (!window.confirm("Delete this comment?")) return;
+    await supabase.from("feedback_comments").delete().eq("id",id);
     loadComments();
   };
+
+  // thread author profile for avatar
+  const [threadProfile, setThreadProfile] = useState(null);
+  useEffect(()=>{
+    supabase.from("profiles").select("*").eq("id",thread.author_id).single().then(({data})=>setThreadProfile(data));
+  },[thread.author_id]);
 
   return (
     <div>
       <div className="mf-back-btn" onClick={onBack}>← Back to Board</div>
 
       <div className="mf-sec" style={{marginBottom:16}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
           <span className={`mf-tag mf-tag-${thread.tag}`}>{TAG_LABELS[thread.tag]||thread.tag}</span>
+          {(admin||thread.author_id===session.user.id)&&(
+            <button className="mf-btn-d" style={{padding:"3px 10px",fontSize:11}} onClick={async()=>{
+              if(!window.confirm("Delete this post and all comments?"))return;
+              await supabase.from("feedback_comments").delete().eq("thread_id",thread.id);
+              await supabase.from("feedback_threads").delete().eq("id",thread.id);
+              onBack();
+            }}>🗑 Delete Post</button>
+          )}
         </div>
         <h3 style={{fontSize:18,fontWeight:700,marginBottom:10,color:"#e8eaf6"}}>{thread.title}</h3>
         <p style={{fontSize:14,color:"#9ba5c9",lineHeight:1.6,marginBottom:14}}>{thread.body}</p>
-        <div style={{display:"flex",gap:14,fontSize:11,color:"#5a6490"}}>
-          <span style={{display:"flex",alignItems:"center",gap:6}}>
-            <div className="mf-avatar" style={{width:22,height:22,fontSize:10,background:avatarColor(thread.author_name)+"22",color:avatarColor(thread.author_name)}}>{avatarInitial(thread.author_name)}</div>
-            {thread.author_name}
-          </span>
+        <div style={{display:"flex",gap:10,alignItems:"center",fontSize:11,color:"#5a6490"}}>
+          <Avatar profile={threadProfile} size={24} fontSize={11}/>
+          <span>{thread.author_name}</span>
+          <span>·</span>
           <span>{timeAgo(thread.created_at)}</span>
+          {admin&&thread.author_id!==session.user.id&&<span style={{color:"#ffb830",fontSize:10,marginLeft:4}}>👑</span>}
         </div>
       </div>
 
@@ -890,14 +1014,16 @@ function ThreadDetail({ thread, session, profile, onBack }) {
         {comments.length===0&&<div style={{color:"#5a6490",fontSize:13,padding:"12px 0"}}>No comments yet. Add the first one!</div>}
         {comments.map(c=>(
           <div key={c.id} className="mf-comment">
-            <div className="mf-avatar" style={{background:avatarColor(c.author_name)+"22",color:avatarColor(c.author_name)}}>
-              {avatarInitial(c.author_name)}
-            </div>
-            <div style={{flex:1}}>
-              <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:5}}>
+            <Avatar profile={profiles[c.author_id]} size={34} fontSize={14}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:5,flexWrap:"wrap"}}>
                 <span style={{fontSize:13,fontWeight:600,color:"#e8eaf6"}}>{c.author_name}</span>
                 <span style={{fontSize:11,color:"#5a6490"}}>{timeAgo(c.created_at)}</span>
                 {c.author_id===session.user.id&&<span style={{fontSize:10,color:"#5a6490",background:"rgba(255,255,255,.06)",padding:"1px 6px",borderRadius:4}}>You</span>}
+                {admin&&c.author_id!==session.user.id&&<span style={{fontSize:10,color:"#ffb830"}}>👑</span>}
+                {(admin||c.author_id===session.user.id)&&(
+                  <button className="mf-btn-d" style={{padding:"2px 8px",fontSize:10,marginLeft:"auto"}} onClick={()=>deleteComment(c.id)}>🗑</button>
+                )}
               </div>
               <p style={{fontSize:13,color:"#9ba5c9",lineHeight:1.6}}>{c.body}</p>
             </div>
@@ -986,7 +1112,13 @@ export default function App() {
       <nav className={`mf-sidebar ${sidebarOpen?"open":""}`}>
         <div className="mf-logo-wrap">
           <div><span className="mf-logo">Monefy</span><span style={{marginLeft:6,fontSize:20}}>💰</span></div>
-          <div className="mf-logo-sub">{profile?.display_name||session.user.email}</div>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10}}>
+            <Avatar profile={profile} size={28} fontSize={12}/>
+            <div style={{minWidth:0}}>
+              <div className="mf-logo-sub" style={{color:"#e8eaf6",fontSize:12}}>{profile?.display_name||session.user.email}</div>
+              {isAdmin(profile)&&<div style={{fontSize:10,color:"#ffb830"}}>👑 Admin</div>}
+            </div>
+          </div>
         </div>
         <div className="mf-nav">
           {NAV.map(n=>(
