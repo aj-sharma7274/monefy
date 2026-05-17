@@ -518,16 +518,19 @@ function Transactions({ transactions, onDeleted }) {
   const now = new Date();
   const [m, setM] = useState(now.getMonth());
   const [y, setY] = useState(now.getFullYear());
+  const { confirm, modal } = useConfirm();
   const txns = transactions.filter(t=>{const d=new Date(t.date);return d.getMonth()===m&&d.getFullYear()===y;}).sort((a,b)=>b.date.localeCompare(a.date));
 
   const del = async (id) => {
-    if (!window.confirm("Delete this transaction?")) return;
+    const ok = await confirm({ icon:"🗑️", title:"Delete Transaction", message:"This transaction will be permanently removed.", confirmLabel:"Yes, Delete" });
+    if (!ok) return;
     await supabase.from("transactions").delete().eq("id",id);
     onDeleted();
   };
 
   return (
     <div>
+      {modal}
       <div className="mf-topbar">
         <h2>Transactions</h2>
         <div className="mf-filters">
@@ -624,6 +627,7 @@ function BudgetPage({ budget, onSaved }) {
   const [newAmt, setNewAmt] = useState("");
   const [msg, setMsg] = useState(null);
   const [saving, setSaving] = useState(false);
+  const { confirm, modal } = useConfirm();
   useEffect(()=>{setLocal({...budget});},[budget]);
 
   const save = async () => {
@@ -651,7 +655,8 @@ function BudgetPage({ budget, onSaved }) {
   };
 
   const delCat = async (cat) => {
-    if (!window.confirm(`Remove "${cat}"?`)) return;
+    const ok = await confirm({ icon:"🗑️", title:"Remove Category", message:`Remove "${cat}" from your budget? This won't delete past transactions.`, confirmLabel:"Remove" });
+    if (!ok) return;
     const {data:{session}} = await supabase.auth.getSession();
     await supabase.from("budget").delete().eq("category",cat).eq("user_id",session.user.id);
     onSaved();
@@ -659,6 +664,7 @@ function BudgetPage({ budget, onSaved }) {
 
   return (
     <div>
+      {modal}
       <div className="mf-topbar">
         <h2>Budget Manager</h2>
         <button className="mf-btn-p" onClick={save} disabled={saving}>{saving?"Saving…":"Save Budget"}</button>
@@ -683,7 +689,56 @@ function BudgetPage({ budget, onSaved }) {
   );
 }
 
-/* ── Admin check — reads from Supabase profile, no hardcoding ── */
+/* ── Custom Confirm Modal (replaces window.confirm) ── */
+const CONFIRM_CSS = `
+  .mf-modal-backdrop { position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px; }
+  .mf-modal { background:#0d1130;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:28px 28px 22px;max-width:360px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,.5); }
+  .mf-modal-icon { font-size:32px;text-align:center;margin-bottom:12px; }
+  .mf-modal-title { font-size:16px;font-weight:700;color:#e8eaf6;margin-bottom:8px;text-align:center; }
+  .mf-modal-msg { font-size:13px;color:#9ba5c9;text-align:center;line-height:1.5;margin-bottom:22px; }
+  .mf-modal-btns { display:flex;gap:10px;justify-content:center; }
+  .mf-modal-cancel { padding:9px 22px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#9ba5c9;cursor:pointer;font-size:13px;font-weight:500; }
+  .mf-modal-ok { padding:9px 22px;border-radius:8px;border:none;background:linear-gradient(135deg,#ff4d6d,#cc3a55);color:#fff;cursor:pointer;font-size:13px;font-weight:600; }
+  .mf-modal-ok.cyan { background:linear-gradient(135deg,#00e5cc,#00b8a4);color:#07091a; }
+`;
+
+function ConfirmModal({ icon, title, message, confirmLabel="Delete", danger=true, onConfirm, onCancel }) {
+  return (
+    <div className="mf-modal-backdrop" onClick={onCancel}>
+      <div className="mf-modal" onClick={e=>e.stopPropagation()}>
+        <div className="mf-modal-icon">{icon}</div>
+        <div className="mf-modal-title">{title}</div>
+        <div className="mf-modal-msg">{message}</div>
+        <div className="mf-modal-btns">
+          <button className="mf-modal-cancel" onClick={onCancel}>Cancel</button>
+          <button className={`mf-modal-ok ${danger?"":"cyan"}`} onClick={onConfirm}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Hook to use confirm modal easily
+function useConfirm() {
+  const [opts, setOpts] = useState(null);
+  const confirm = (options) => new Promise(resolve => {
+    setOpts({ ...options, resolve });
+  });
+  const modal = opts ? (
+    <ConfirmModal
+      icon={opts.icon||"🗑️"}
+      title={opts.title||"Are you sure?"}
+      message={opts.message||"This action cannot be undone."}
+      confirmLabel={opts.confirmLabel||"Delete"}
+      danger={opts.danger!==false}
+      onConfirm={()=>{ opts.resolve(true); setOpts(null); }}
+      onCancel={()=>{ opts.resolve(false); setOpts(null); }}
+    />
+  ) : null;
+  return { confirm, modal };
+}
+
+
 const isAdmin = (profile) => profile?.is_admin === true;
 
 const PRESET_AVATARS = ["🧑","👩","👨","🧔","👩‍💻","👨‍💻","🧑‍🎨","👩‍🎨","🦊","🐯","🐻","🦁","🐸","🐧","🦋","🌟","🔥","💎","🚀","🎯"];
@@ -845,6 +900,7 @@ function FeedbackBoard({ session, profile }) {
   const [tag, setTag] = useState("feature");
   const [posting, setPosting] = useState(false);
   const [msg, setMsg] = useState(null);
+  const { confirm, modal } = useConfirm();
   const admin = isAdmin(profile);
 
   const loadThreads = useCallback(async () => {
@@ -870,7 +926,8 @@ function FeedbackBoard({ session, profile }) {
 
   const deleteThread = async (e, id) => {
     e.stopPropagation();
-    if (!window.confirm("Delete this post?")) return;
+    const ok = await confirm({ icon:"🗑️", title:"Delete Post", message:"This post and all its comments will be permanently deleted.", confirmLabel:"Delete Post" });
+    if (!ok) return;
     await supabase.from("feedback_comments").delete().eq("thread_id",id);
     await supabase.from("feedback_threads").delete().eq("id",id);
     loadThreads();
@@ -880,6 +937,7 @@ function FeedbackBoard({ session, profile }) {
 
   return (
     <div>
+      {modal}
       <div className="mf-topbar">
         <h2>Feedback Board</h2>
         <button className="mf-btn-p" onClick={()=>setShowNew(s=>!s)}>{showNew?"Cancel":"+ New Post"}</button>
@@ -939,6 +997,7 @@ function ThreadDetail({ thread, session, profile, onBack }) {
   const [posting, setPosting] = useState(false);
   const [msg, setMsg] = useState(null);
   const [profiles, setProfiles] = useState({});
+  const { confirm, modal } = useConfirm();
   const admin = isAdmin(profile);
 
   const loadComments = useCallback(async () => {
@@ -971,7 +1030,8 @@ function ThreadDetail({ thread, session, profile, onBack }) {
   };
 
   const deleteComment = async (id) => {
-    if (!window.confirm("Delete this comment?")) return;
+    const ok = await confirm({ icon:"💬", title:"Delete Comment", message:"This comment will be permanently removed.", confirmLabel:"Delete Comment" });
+    if (!ok) return;
     await supabase.from("feedback_comments").delete().eq("id",id);
     loadComments();
   };
@@ -984,6 +1044,7 @@ function ThreadDetail({ thread, session, profile, onBack }) {
 
   return (
     <div>
+      {modal}
       <div className="mf-back-btn" onClick={onBack}>← Back to Board</div>
 
       <div className="mf-sec" style={{marginBottom:16}}>
@@ -991,7 +1052,8 @@ function ThreadDetail({ thread, session, profile, onBack }) {
           <span className={`mf-tag mf-tag-${thread.tag}`}>{TAG_LABELS[thread.tag]||thread.tag}</span>
           {(admin||thread.author_id===session.user.id)&&(
             <button className="mf-btn-d" style={{padding:"3px 10px",fontSize:11}} onClick={async()=>{
-              if(!window.confirm("Delete this post and all comments?"))return;
+              const ok = await confirm({ icon:"🗑️", title:"Delete Post", message:"This post and all its comments will be permanently deleted.", confirmLabel:"Delete Post" });
+              if(!ok)return;
               await supabase.from("feedback_comments").delete().eq("thread_id",thread.id);
               await supabase.from("feedback_threads").delete().eq("id",thread.id);
               onBack();
@@ -1054,7 +1116,7 @@ export default function App() {
   const [selYear, setSelYear] = useState(now.getFullYear());
 
   useEffect(()=>{
-    const el=document.createElement("style"); el.textContent=CSS; document.head.appendChild(el);
+    const el=document.createElement("style"); el.textContent=CSS+CONFIRM_CSS; document.head.appendChild(el);
     return ()=>document.head.removeChild(el);
   },[]);
 
