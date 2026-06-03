@@ -184,121 +184,7 @@ const avatarColor = (name) => {
 };
 const avatarInitial = (name) => (name||"?")[0].toUpperCase();
 
-/* ── SVG Charts ── */
-function BarChart({ labels, datasets, height = 260 }) {
-  const maxVal = Math.max(...datasets.flatMap(d => d.data), 1);
-  const barW = Math.max(6, Math.min(22, Math.floor(480 / labels.length / datasets.length - 3)));
-  const groupW = barW * datasets.length + 4;
-  const [pL, pB, pT, pR] = [68, 50, 16, 16];
-  const W = Math.max(480, labels.length * (groupW + 8) + pL + pR);
-  const cH = height - pT - pB;
-  return (
-    <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-      <svg viewBox={`0 0 ${W} ${height}`} width="100%" style={{ height, minWidth: 300 }}>
-        {[0,.25,.5,.75,1].map((f,i) => {
-          const v = Math.round(maxVal*f), y = pT+cH-f*cH;
-          return <g key={i}>
-            <line x1={pL} x2={W-pR} y1={y} y2={y} stroke="rgba(255,255,255,.05)" strokeWidth={0.5}/>
-            <text x={pL-5} y={y+4} textAnchor="end" fontSize={9} fill="#5a6490">₹{v>=1000?Math.round(v/1000)+"k":v}</text>
-          </g>;
-        })}
-        {labels.map((lbl,li) => {
-          const gx = pL+li*(groupW+8);
-          return <g key={li}>
-            {datasets.map((ds,di) => {
-              const val=ds.data[li]||0, bh=Math.max(2,(val/maxVal)*cH);
-              return <rect key={di} x={gx+di*(barW+2)} y={pT+cH-bh} width={barW} height={bh} rx={2} fill={ds.colors?ds.colors[li]:ds.color} opacity={0.85}/>;
-            })}
-            <text x={gx+groupW/2} y={height-pB+16} textAnchor="middle" fontSize={9} fill="#5a6490"
-              transform={labels.length>8?`rotate(-38,${gx+groupW/2},${height-pB+16})`:""}>
-              {lbl.length>9?lbl.slice(0,8)+"…":lbl}
-            </text>
-          </g>;
-        })}
-      </svg>
-      <div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:6}}>
-        {datasets.map((ds,i) => (
-          <span key={i} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:"#9ba5c9"}}>
-            <span style={{width:10,height:10,borderRadius:2,background:ds.color,display:"inline-block"}}/>
-            {ds.label}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
 
-function DonutChart({ labels, data, colors }) {
-  const total = data.reduce((a,b)=>a+b,0)||1;
-  let angle = -Math.PI/2;
-  const [cx,cy,r,inn] = [110,110,80,50];
-  const slices = data.map((v,i) => {
-    const sw=(v/total)*2*Math.PI;
-    const x1=cx+r*Math.cos(angle),y1=cy+r*Math.sin(angle);
-    angle+=sw;
-    const x2=cx+r*Math.cos(angle),y2=cy+r*Math.sin(angle);
-    const xi1=cx+inn*Math.cos(angle-sw),yi1=cy+inn*Math.sin(angle-sw);
-    const xi2=cx+inn*Math.cos(angle),yi2=cy+inn*Math.sin(angle);
-    return {path:`M${x1},${y1} A${r},${r},0,${sw>Math.PI?1:0},1,${x2},${y2} L${xi2},${yi2} A${inn},${inn},0,${sw>Math.PI?1:0},0,${xi1},${yi1} Z`,color:colors[i%colors.length],label:labels[i],val:v};
-  });
-  return (
-    <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
-      <svg viewBox="0 0 220 220" width={150} height={150}>
-        {slices.map((s,i)=><path key={i} d={s.path} fill={s.color} opacity={0.9}/>)}
-        <text x={cx} y={cy-5} textAnchor="middle" fontSize={11} fill="#9ba5c9">Total</text>
-        <text x={cx} y={cy+13} textAnchor="middle" fontSize={13} fontWeight={600} fill="#e8eaf6">₹{Math.round(total/1000)}k</text>
-      </svg>
-      <div style={{display:"flex",flexDirection:"column",gap:7,flex:1,minWidth:120}}>
-        {slices.map((s,i)=>(
-          <div key={i} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"#9ba5c9"}}>
-            <span style={{width:8,height:8,borderRadius:2,background:s.color,flexShrink:0}}/>
-            <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.label}</span>
-            <span style={{fontWeight:500,color:"#e8eaf6",flexShrink:0}}>{fmt(s.val)}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function LineChart({ labels, datasets, height = 200 }) {
-  const maxVal = Math.max(...datasets.flatMap(d=>d.data),1);
-  const [pL,pB,pT,pR] = [60,34,14,16];
-  const W=560, cW=W-pL-pR, cH=height-pT-pB;
-  const xStep=cW/(labels.length-1||1);
-  const pathD = (data) => data.map((v,i)=>`${i===0?"M":"L"}${pL+i*xStep},${pT+cH-(v/maxVal)*cH}`).join(" ");
-  return (
-    <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-      <svg viewBox={`0 0 ${W} ${height}`} width="100%" style={{height,minWidth:280}}>
-        {[0,.25,.5,.75,1].map((f,i)=>{
-          const v=Math.round(maxVal*f),y=pT+cH-f*cH;
-          return <g key={i}>
-            <line x1={pL} x2={W-pR} y1={y} y2={y} stroke="rgba(255,255,255,.05)" strokeWidth={0.5}/>
-            <text x={pL-5} y={y+4} textAnchor="end" fontSize={9} fill="#5a6490">₹{v>=1000?Math.round(v/1000)+"k":v}</text>
-          </g>;
-        })}
-        {datasets.map((ds,di)=>{
-          const pts=ds.data.map((v,i)=>({x:pL+i*xStep,y:pT+cH-(v/maxVal)*cH}));
-          const area=`${pathD(ds.data)} L${pL+(labels.length-1)*xStep},${pT+cH} L${pL},${pT+cH} Z`;
-          return <g key={di}>
-            {ds.fill&&<path d={area} fill={ds.color} opacity={0.1}/>}
-            <path d={pathD(ds.data)} fill="none" stroke={ds.color} strokeWidth={2} strokeDasharray={ds.dash?"5,4":undefined}/>
-            {!ds.dash&&pts.map((p,i)=><circle key={i} cx={p.x} cy={p.y} r={3} fill={ds.color}/>)}
-          </g>;
-        })}
-        {labels.map((l,i)=><text key={i} x={pL+i*xStep} y={height-pB+14} textAnchor="middle" fontSize={9} fill="#5a6490">{l}</text>)}
-      </svg>
-      <div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:6}}>
-        {datasets.map((ds,i)=>(
-          <span key={i} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:"#9ba5c9"}}>
-            <span style={{width:10,height:3,background:ds.color,display:"inline-block",borderRadius:2}}/>
-            {ds.label}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 /* ── Auth Screen (Login + Signup) ── */
 function AuthScreen({ onLogin }) {
@@ -397,18 +283,223 @@ function Loader() {
 
 /* ══ PAGE COMPONENTS — all outside App to prevent remount/defocus ══ */
 
+/* ── Smart rule-based insights engine ── */
+function generateInsights(budget, spend, transactions, selMonth, selYear, totalBudget, totalSpent) {
+  const insights = [];
+  const daysInMonth = new Date(selYear, selMonth+1, 0).getDate();
+  const today = new Date();
+  const isCurrentMonth = today.getMonth()===selMonth && today.getFullYear()===selYear;
+  const dayOfMonth = isCurrentMonth ? today.getDate() : daysInMonth;
+  const daysLeft = isCurrentMonth ? daysInMonth - dayOfMonth : 0;
+  const dailyAvg = dayOfMonth > 0 ? totalSpent / dayOfMonth : 0;
+  const projectedTotal = dailyAvg * daysInMonth;
+  const pctMonth = Math.round((dayOfMonth / daysInMonth) * 100);
+  const pctBudget = pct(totalSpent, totalBudget);
+
+  // Over budget overall
+  if (totalSpent > totalBudget) insights.push({ icon:"🚨", color:"#ff4d6d", text:`You are <strong>${fmt(totalSpent-totalBudget)} over</strong> your total budget this month.` });
+
+  // Projection warning
+  if (isCurrentMonth && projectedTotal > totalBudget && totalSpent <= totalBudget)
+    insights.push({ icon:"⚠️", color:"#ffb830", text:`At this rate you'll spend <strong>${fmt(Math.round(projectedTotal))}</strong> by month end — <strong>${fmt(Math.round(projectedTotal-totalBudget))} over</strong> budget.` });
+
+  // Spending pace vs month progress
+  if (isCurrentMonth && pctBudget < pctMonth - 10)
+    insights.push({ icon:"✅", color:"#00d68f", text:`You've used <strong>${pctBudget}%</strong> of budget with <strong>${pctMonth}%</strong> of month gone. You're spending well below pace.` });
+
+  // Days left with remaining
+  if (isCurrentMonth && daysLeft > 0 && totalSpent < totalBudget) {
+    const remaining = totalBudget - totalSpent;
+    const perDay = Math.round(remaining / daysLeft);
+    insights.push({ icon:"📅", color:"#00e5cc", text:`<strong>${daysLeft} days left</strong> with ${fmt(remaining)} remaining — about <strong>${fmt(perDay)}/day</strong> to stay on budget.` });
+  }
+
+  // Most overspent category
+  const overCats = Object.keys(budget).filter(c=>budget[c]>0&&(spend[c]||0)>budget[c]);
+  if (overCats.length) {
+    const worst = overCats.sort((a,b)=>((spend[b]||0)-budget[b])-((spend[a]||0)-budget[a]))[0];
+    insights.push({ icon:"🔴", color:"#ff4d6d", text:`<strong>${worst}</strong> is over budget by <strong>${fmt((spend[worst]||0)-budget[worst])}</strong>.` });
+  }
+
+  // Best saved category
+  const underCats = Object.keys(budget).filter(c=>budget[c]>0&&(spend[c]||0)<budget[c]*0.5);
+  if (underCats.length) {
+    const best = underCats.sort((a,b)=>(budget[b]-(spend[b]||0))-(budget[a]-(spend[a]||0)))[0];
+    insights.push({ icon:"💚", color:"#00d68f", text:`<strong>${best}</strong> still has <strong>${fmt(budget[best]-(spend[best]||0))}</strong> left — well under budget.` });
+  }
+
+  // Biggest single transaction
+  const monthTxns = transactions.filter(t=>{ const d=new Date(t.date); return d.getMonth()===selMonth&&d.getFullYear()===selYear; });
+  if (monthTxns.length) {
+    const biggest = monthTxns.reduce((a,b)=>a.amount>b.amount?a:b);
+    insights.push({ icon:"💸", color:"#a78bfa", text:`Biggest expense: <strong>${biggest.description}</strong> — <strong>${fmt(biggest.amount)}</strong> on ${biggest.date}.` });
+  }
+
+  // Day of week with most spending
+  const dowMap = [0,0,0,0,0,0,0];
+  const dowCount = [0,0,0,0,0,0,0];
+  monthTxns.forEach(t=>{ const dow=new Date(t.date).getDay(); dowMap[dow]+=t.amount; dowCount[dow]++; });
+  const dowAvg = dowMap.map((v,i)=>dowCount[i]>0?v/dowCount[i]:0);
+  const maxDow = dowAvg.indexOf(Math.max(...dowAvg));
+  const dowNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  if (dowCount[maxDow]>0) insights.push({ icon:"📆", color:"#ffb830", text:`You spend most on <strong>${dowNames[maxDow]}s</strong> — avg <strong>${fmt(Math.round(dowAvg[maxDow]))}</strong> per transaction.` });
+
+  // Compare with last month
+  const prevMonth = selMonth===0?11:selMonth-1;
+  const prevYear = selMonth===0?selYear-1:selYear;
+  const prevTxns = transactions.filter(t=>{ const d=new Date(t.date); return d.getMonth()===prevMonth&&d.getFullYear()===prevYear; });
+  const prevSpent = prevTxns.reduce((s,t)=>s+t.amount,0);
+  if (prevSpent>0&&totalSpent>0) {
+    const diff = totalSpent - prevSpent;
+    const pctDiff = Math.abs(Math.round((diff/prevSpent)*100));
+    if (diff<0) insights.push({ icon:"📉", color:"#00d68f", text:`Spending is <strong>${pctDiff}% lower</strong> than last month (${fmt(prevSpent)}). Keep it up!` });
+    else if (diff>0) insights.push({ icon:"📈", color:"#ffb830", text:`Spending is <strong>${pctDiff}% higher</strong> than last month (${fmt(prevSpent)}).` });
+  }
+
+  return insights.slice(0, 5);
+}
+
+/* ── Chart manager — creates/destroys Chart.js instances ── */
+let chartInstances = {};
+function destroyChart(id) { if(chartInstances[id]){chartInstances[id].destroy();delete chartInstances[id];} }
+function createChart(id, config) {
+  destroyChart(id);
+  const el = document.getElementById(id);
+  if (!el) return;
+  chartInstances[id] = new window.Chart(el, config);
+}
+
 function Dashboard({ budget, transactions, selMonth, setSelMonth, selYear, setSelYear }) {
+  const [chartsReady, setChartsReady] = useState(false);
+
   const txns = transactions.filter(t=>{ const d=new Date(t.date); return d.getMonth()===selMonth&&d.getFullYear()===selYear; });
   const spend = {}; txns.forEach(t=>{spend[t.category]=(spend[t.category]||0)+t.amount;});
   const totalBudget = Object.values(budget).reduce((a,b)=>a+b,0);
   const totalSpent = Object.values(spend).reduce((a,b)=>a+b,0);
-  const remaining = totalBudget-totalSpent;
-  const overCats = Object.keys(budget).filter(c=>(spend[c]||0)>budget[c]&&budget[c]>0).length;
-  const recent = [...txns].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6);
+  const remaining = totalBudget - totalSpent;
   const activeCats = Object.keys(budget).filter(c=>budget[c]>0);
+  const spentCats = activeCats.filter(c=>(spend[c]||0)>0);
+
+  // Daily avg
+  const today = new Date();
+  const isCurrentMonth = today.getMonth()===selMonth&&today.getFullYear()===selYear;
+  const dayOfMonth = isCurrentMonth ? today.getDate() : new Date(selYear,selMonth+1,0).getDate();
+  const dailyAvg = dayOfMonth>0 ? Math.round(totalSpent/dayOfMonth) : 0;
+
+  // Last month comparison
+  const prevM = selMonth===0?11:selMonth-1, prevY = selMonth===0?selYear-1:selYear;
+  const prevSpent = transactions.filter(t=>{const d=new Date(t.date);return d.getMonth()===prevM&&d.getFullYear()===prevY;}).reduce((s,t)=>s+t.amount,0);
+  const spentDiff = prevSpent>0 ? Math.round(((totalSpent-prevSpent)/prevSpent)*100) : null;
+
+  const recent = [...txns].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
+  const insights = generateInsights(budget, spend, transactions, selMonth, selYear, totalBudget, totalSpent);
+
+  // Load Chart.js once
+  useEffect(()=>{
+    if (window.Chart) { setChartsReady(true); return; }
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js";
+    s.onload = () => setChartsReady(true);
+    document.head.appendChild(s);
+  },[]);
+
+  // Draw all charts when data or month changes
+  useEffect(()=>{
+    if (!chartsReady || !window.Chart) return;
+
+    const CHART_BG = "rgba(255,255,255,0)";
+    const GRID = "rgba(255,255,255,0.06)";
+    const TICK = "#5a6490";
+    const fmtTick = v => v>=1000?"₹"+Math.round(v/1000)+"k":"₹"+v;
+
+    // Chart 1 — Budget vs Actual horizontal
+    createChart("mf-c1",{
+      type:"bar",
+      data:{
+        labels: activeCats.map(c=>c.length>12?c.slice(0,11)+"…":c),
+        datasets:[
+          {label:"Budget", data:activeCats.map(c=>budget[c]||0), backgroundColor:"rgba(0,229,204,0.25)", borderColor:"#00e5cc", borderWidth:1.5, borderRadius:3},
+          {label:"Actual", data:activeCats.map(c=>spend[c]||0), backgroundColor:activeCats.map(c=>(spend[c]||0)>(budget[c]||0)?"rgba(255,77,109,0.7)":"rgba(0,214,143,0.7)"), borderRadius:3},
+        ]
+      },
+      options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+        scales:{x:{ticks:{color:TICK,font:{size:10},callback:fmtTick},grid:{color:GRID}},y:{ticks:{color:TICK,font:{size:10}},grid:{display:false}}}}
+    });
+
+    // Chart 2 — Donut
+    const PIE = ["#00e5cc","#ff4d8d","#ffb830","#00d68f","#a78bfa","#60a5fa","#f97316","#34d399","#fb7185","#818cf8"];
+    createChart("mf-c2",{
+      type:"doughnut",
+      data:{labels:spentCats, datasets:[{data:spentCats.map(c=>spend[c]), backgroundColor:spentCats.map((_,i)=>PIE[i%PIE.length]), borderWidth:0, hoverOffset:6}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:"62%",plugins:{legend:{display:false}}}
+    });
+
+    // Chart 3 — Daily spending this month
+    const daysInMonth = new Date(selYear,selMonth+1,0).getDate();
+    const dayLabels = Array.from({length:daysInMonth},(_,i)=>i+1);
+    const dayData = dayLabels.map(d=>{
+      const map={}; txns.forEach(t=>{const dd=new Date(t.date).getDate(); map[dd]=(map[dd]||0)+t.amount;});
+      return map[d]||0;
+    });
+    const dailyLimit = totalBudget/daysInMonth;
+    createChart("mf-c3",{
+      type:"line",
+      data:{labels:dayLabels,datasets:[
+        {label:"Spent",data:dayData,borderColor:"#00e5cc",backgroundColor:"rgba(0,229,204,0.08)",fill:true,borderWidth:2,pointRadius:3,pointBackgroundColor:"#00e5cc",tension:0.3},
+        {label:"Daily limit",data:dayLabels.map(()=>Math.round(dailyLimit)),borderColor:"#ff4d8d",borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false},
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{x:{ticks:{color:TICK,font:{size:10},maxTicksLimit:10,autoSkip:true},grid:{color:GRID}},y:{ticks:{color:TICK,font:{size:10},callback:fmtTick},grid:{color:GRID}}}}
+    });
+
+    // Chart 4 — Day of week avg
+    const dowTotals=[0,0,0,0,0,0,0], dowCounts=[0,0,0,0,0,0,0];
+    txns.forEach(t=>{const dow=new Date(t.date).getDay(); dowTotals[dow]+=t.amount; dowCounts[dow]++;});
+    const dowAvg = dowTotals.map((v,i)=>dowCounts[i]>0?Math.round(v/dowCounts[i]):0);
+    const maxDow = Math.max(...dowAvg);
+    createChart("mf-c4",{
+      type:"bar",
+      data:{labels:["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],
+        datasets:[{label:"Avg spend",data:dowAvg,backgroundColor:dowAvg.map(v=>v===maxDow&&v>0?"#ff4d8d":"rgba(0,229,204,0.35)"),borderRadius:4,borderSkipped:false}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+        scales:{x:{ticks:{color:TICK,font:{size:11}},grid:{display:false}},y:{ticks:{color:TICK,font:{size:10},callback:fmtTick},grid:{color:GRID}}}}
+    });
+
+    // Chart 5 — Last 6 months trend
+    const months6 = Array.from({length:6},(_,i)=>{
+      const d=new Date(selYear,selMonth-5+i,1); return {m:d.getMonth(),y:d.getFullYear(),label:MONTHS_SHORT[d.getMonth()]};
+    });
+    const m6data = months6.map(({m,y})=>transactions.filter(t=>{const d=new Date(t.date);return d.getMonth()===m&&d.getFullYear()===y;}).reduce((s,t)=>s+t.amount,0));
+    createChart("mf-c5",{
+      type:"line",
+      data:{labels:months6.map(x=>x.label),datasets:[
+        {label:"Spent",data:m6data,borderColor:"#ff4d8d",backgroundColor:"rgba(255,77,141,0.08)",fill:true,borderWidth:2,pointRadius:4,pointBackgroundColor:"#ff4d8d",tension:0.3},
+        {label:"Budget",data:months6.map(()=>totalBudget),borderColor:"rgba(0,229,204,0.4)",borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false},
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+        scales:{x:{ticks:{color:TICK,font:{size:11}},grid:{display:false}},y:{ticks:{color:TICK,font:{size:10},callback:fmtTick},grid:{color:GRID}}}}
+    });
+
+  },[chartsReady, selMonth, selYear, budget, transactions]);
+
+  // Cleanup on unmount
+  useEffect(()=>()=>{ ["mf-c1","mf-c2","mf-c3","mf-c4","mf-c5"].forEach(destroyChart); },[]);
+
+  const PIE_COLORS_DASH = ["#00e5cc","#ff4d8d","#ffb830","#00d68f","#a78bfa","#60a5fa","#f97316","#34d399","#fb7185","#818cf8"];
+
+  const CC = {
+    card: {background:"#0d1130", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"16px 20px"},
+    title: {fontSize:13, fontWeight:600, color:"#e8eaf6", marginBottom:4},
+    sub:   {fontSize:11, color:"#5a6490", marginBottom:14},
+    legend:{display:"flex", flexWrap:"wrap", gap:12, marginTop:10},
+    legItem:{display:"flex", alignItems:"center", gap:5, fontSize:11, color:"#9ba5c9"},
+    legDot:{width:10, height:10, borderRadius:2, flexShrink:0},
+  };
 
   return (
     <div>
+      {/* Topbar */}
       <div className="mf-topbar">
         <h2>Dashboard</h2>
         <div className="mf-filters">
@@ -416,53 +507,158 @@ function Dashboard({ budget, transactions, selMonth, setSelMonth, selYear, setSe
           <select className="mf-sel" value={selYear} onChange={e=>setSelYear(+e.target.value)}>{YEARS.map(y=><option key={y} value={y}>{y}</option>)}</select>
         </div>
       </div>
-      <div className="mf-cards">
+
+      {/* ── 4 Summary Cards ── */}
+      <div className="mf-cards" style={{marginBottom:18}}>
         {[
-          {label:"Total Budget",val:fmt(totalBudget),sub:MONTHS[selMonth]+" "+selYear,color:"#00e5cc"},
-          {label:"Total Spent",val:fmt(totalSpent),sub:pct(totalSpent,totalBudget)+"% used",color:"#ff4d8d"},
-          {label:remaining>=0?"Remaining":"Over Budget",val:fmt(Math.abs(remaining)),sub:txns.length+" transactions",color:remaining>=0?"#00d68f":"#ff4d6d"},
-          {label:"Over Budget",val:overCats+" cats",sub:"need attention",color:"#ffb830"},
+          {label:"Budget",    val:fmt(totalBudget), sub:MONTHS[selMonth]+" "+selYear,                                                      color:"#e8eaf6", subColor:"#5a6490"},
+          {label:"Spent",     val:fmt(totalSpent),  sub:pct(totalSpent,totalBudget)+"% of budget",                                         color:"#e8eaf6", subColor:"#5a6490"},
+          {label:"Remaining", val:fmt(Math.abs(remaining)), sub:remaining>=0?(txns.length+" transactions"):"Over budget",                  color:remaining>=0?"#e8eaf6":"#ff4d6d", subColor:remaining>=0?"#5a6490":"#ff4d6d"},
+          {label:"Daily avg", val:fmt(dailyAvg),    sub:spentDiff!==null?(spentDiff<0?"↓ "+Math.abs(spentDiff)+"% vs last month":"↑ "+spentDiff+"% vs last month"):"no prior data", color:"#e8eaf6", subColor:spentDiff!==null&&spentDiff<0?"#00d68f":"#ffb830"},
         ].map((c,i)=>(
-          <div key={i} className="mf-card">
-            <div className="mf-card-label">{c.label}</div>
-            <div className="mf-card-val" style={{color:c.color}}>{c.val}</div>
-            <div className="mf-card-sub">{c.sub}</div>
+          <div key={i} style={{background:"#0d1130",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"14px 16px"}}>
+            <div style={{fontSize:11,color:"#5a6490",marginBottom:6}}>{c.label}</div>
+            <div style={{fontSize:20,fontWeight:700,color:c.color}}>{c.val}</div>
+            <div style={{fontSize:11,color:c.subColor,marginTop:4}}>{c.sub}</div>
           </div>
         ))}
       </div>
-      <div className="mf-sec">
-        <div className="mf-sec-title">Budget vs Actual</div>
-        {activeCats.length===0&&<div style={{color:"#5a6490",fontSize:13}}>No budget yet. Go to Budget to add categories.</div>}
-        {activeCats.map(cat=>{
-          const s=spend[cat]||0,b=budget[cat],p=pct(s,b),over=s>b;
-          return (
-            <div key={cat} className="mf-prog-item">
-              <div className="mf-prog-meta">
-                <span style={{color:"#e8eaf6"}}>{cat}</span>
-                <span style={{color:"#9ba5c9"}}>{fmt(s)} / {fmt(b)}</span>
-              </div>
-              <div className="mf-prog-bg"><div className="mf-prog-fill" style={{width:`${Math.min(p,100)}%`,background:over?"#ff4d6d":p>80?"#ffb830":"#00e5cc"}}/></div>
+
+      {/* ── Charts grid: exact proposal layout ── */}
+      <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+
+        {/* Chart 1: Budget vs Actual — left */}
+        <div style={CC.card}>
+          <div style={CC.title}>Budget vs actual</div>
+          <div style={CC.sub}>Overspend shown in red · this month</div>
+          <div style={{position:"relative", height:Math.max(180, activeCats.length*36)}}>
+            <canvas id="mf-c1" role="img" aria-label="Horizontal bar chart comparing budget vs actual spending by category">Budget vs actual spending by category.</canvas>
+          </div>
+          <div style={CC.legend}>
+            {[{c:"rgba(0,229,204,0.5)",l:"Budget"},{c:"rgba(0,214,143,0.75)",l:"Under budget"},{c:"rgba(255,77,109,0.75)",l:"Over budget"}].map((x,i)=>(
+              <span key={i} style={CC.legItem}><span style={{...CC.legDot,background:x.c}}/>{x.l}</span>
+            ))}
+          </div>
+        </div>
+
+        {/* Chart 2: Spending breakdown (donut) — right */}
+        <div style={CC.card}>
+          <div style={CC.title}>Spending breakdown</div>
+          <div style={CC.sub}>Where your money goes · this month</div>
+          <div style={{display:"flex", alignItems:"center", gap:16, flexWrap:"wrap"}}>
+            <div style={{position:"relative", width:140, height:140, flexShrink:0}}>
+              <canvas id="mf-c2" role="img" aria-label="Donut chart of spending by category">Spending by category.</canvas>
             </div>
-          );
-        })}
-      </div>
-      <div className="mf-sec">
-        <div className="mf-sec-title">Recent Transactions</div>
+            <div style={{display:"flex", flexDirection:"column", gap:8, flex:1, minWidth:100}}>
+              {spentCats.slice(0,6).map((c,i)=>(
+                <div key={c} style={{display:"flex", alignItems:"center", justifyContent:"space-between", fontSize:11, color:"#9ba5c9", gap:6}}>
+                  <span style={{display:"flex", alignItems:"center", gap:6}}>
+                    <span style={{...CC.legDot, width:8, height:8, background:PIE_COLORS_DASH[i%PIE_COLORS_DASH.length]}}/>
+                    <span style={{overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:90}}>{c}</span>
+                  </span>
+                  <span style={{fontWeight:600, color:"#e8eaf6", flexShrink:0}}>{fmt(spend[c])}</span>
+                </div>
+              ))}
+              {spentCats.length===0&&<div style={{color:"#5a6490",fontSize:12}}>No spending yet</div>}
+            </div>
+          </div>
+        </div>
+
+        {/* Chart 3: Daily spending — FULL WIDTH */}
+        <div style={{...CC.card, gridColumn:"1 / -1"}}>
+          <div style={CC.title}>Daily spending pattern</div>
+          <div style={CC.sub}>How much you spend each day · this month · dotted = daily budget limit</div>
+          <div style={{position:"relative", height:180}}>
+            <canvas id="mf-c3" role="img" aria-label="Line chart of daily spending over the month with budget limit">Daily spending pattern.</canvas>
+          </div>
+          <div style={CC.legend}>
+            <span style={CC.legItem}><span style={{width:14,height:2,background:"#00e5cc",borderRadius:2,flexShrink:0}}/> Daily spend</span>
+            <span style={CC.legItem}><span style={{width:14,height:0,borderTop:"2px dashed #ff4d8d",flexShrink:0}}/> Daily limit</span>
+          </div>
+        </div>
+
+        {/* Chart 4: Day of week — left */}
+        <div style={CC.card}>
+          <div style={CC.title}>Spending by day of week</div>
+          <div style={CC.sub}>Which days you spend most · pink = highest</div>
+          <div style={{position:"relative", height:180}}>
+            <canvas id="mf-c4" role="img" aria-label="Bar chart of average spending per day of week">Day of week spending.</canvas>
+          </div>
+        </div>
+
+        {/* Chart 5: Monthly trend — right */}
+        <div style={CC.card}>
+          <div style={CC.title}>Monthly trend</div>
+          <div style={CC.sub}>Spent vs budget · last 6 months</div>
+          <div style={{position:"relative", height:180}}>
+            <canvas id="mf-c5" role="img" aria-label="Line chart of monthly spending vs budget over 6 months">Monthly spending trend.</canvas>
+          </div>
+          <div style={CC.legend}>
+            <span style={CC.legItem}><span style={{width:14,height:2,background:"#ff4d8d",borderRadius:2,flexShrink:0}}/> Spent</span>
+            <span style={CC.legItem}><span style={{width:14,height:0,borderTop:"2px dashed rgba(0,229,204,0.6)",flexShrink:0}}/> Budget</span>
+          </div>
+        </div>
+
+        {/* Chart 6: Category budget usage — left */}
+        <div style={CC.card}>
+          <div style={CC.title}>Category budget usage</div>
+          <div style={CC.sub}>% of budget used · this month</div>
+          {activeCats.length===0
+            ?<div style={{color:"#5a6490",fontSize:13}}>No budget set. Go to Budget page.</div>
+            :activeCats.map(cat=>{
+              const s=spend[cat]||0, b=budget[cat], p=pct(s,b), over=s>b;
+              const barColor = over?"#D85A30":p>80?"#BA7517":"#1D9E75";
+              const pctColor = over?"#ff4d6d":p>80?"#ffb830":"#9ba5c9";
+              return (
+                <div key={cat} style={{display:"flex", alignItems:"center", gap:10, marginBottom:10}}>
+                  <span style={{fontSize:12, color:"#9ba5c9", width:120, flexShrink:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{cat}</span>
+                  <div style={{flex:1, height:7, background:"rgba(255,255,255,0.07)", borderRadius:99, overflow:"hidden"}}>
+                    <div style={{height:"100%", width:`${Math.min(p,100)}%`, background:barColor, borderRadius:99}}/>
+                  </div>
+                  <span style={{fontSize:11, color:pctColor, width:36, textAlign:"right", flexShrink:0, fontWeight:over||p>80?600:400}}>{p}%</span>
+                </div>
+              );
+            })
+          }
+        </div>
+
+        {/* Chart 7: Smart Insights — right */}
+        <div style={CC.card}>
+          <div style={CC.title}>Smart insights</div>
+          <div style={CC.sub}>Personalised observations</div>
+          {insights.length===0
+            ?<div style={{color:"#5a6490",fontSize:13}}>Add transactions to see insights.</div>
+            :<div style={{display:"flex", flexDirection:"column", gap:9}}>
+              {insights.map((ins,i)=>(
+                <div key={i} style={{display:"flex", alignItems:"flex-start", gap:10, padding:"10px 12px", background:"rgba(255,255,255,0.03)", borderRadius:8, border:"1px solid rgba(255,255,255,0.05)"}}>
+                  <span style={{fontSize:17, flexShrink:0, lineHeight:1.4}}>{ins.icon}</span>
+                  <span style={{fontSize:12, color:"#9ba5c9", lineHeight:1.55}} dangerouslySetInnerHTML={{__html:ins.text.replace(/<strong>/g,`<strong style="color:#e8eaf6;font-weight:600">`)}}/>
+                </div>
+              ))}
+            </div>
+          }
+        </div>
+
+      </div>{/* end charts grid */}
+
+      {/* Recent Transactions — below grid, full width */}
+      <div style={{...CC.card, marginTop:14}}>
+        <div style={CC.title}>Recent transactions</div>
+        <div style={{...CC.sub, marginBottom:0}}>Latest expenses this month</div>
         {recent.length===0
           ?<div style={{color:"#5a6490",fontSize:13,padding:"20px 0",textAlign:"center"}}>No transactions this month</div>
-          :<div className="mf-table-wrap">
-            <table className="mf-table">
-              <thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Amount</th></tr></thead>
-              <tbody>{recent.map(t=>(
-                <tr key={t.id}>
-                  <td>{t.date}</td><td style={{color:"#e8eaf6"}}>{t.description}</td>
-                  <td><span className="mf-chip">{t.category}</span></td>
-                  <td style={{color:"#ff4d8d",fontWeight:600}}>{fmt(t.amount)}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>}
+          :recent.map(t=>(
+            <div key={t.id} style={{display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+              <div style={{minWidth:0, flex:1}}>
+                <div style={{fontSize:13, color:"#e8eaf6", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{t.description}</div>
+                <div style={{fontSize:11, color:"#5a6490", marginTop:2}}>{t.date} · <span style={{color:"#9ba5c9"}}>{t.category}</span></div>
+              </div>
+              <div style={{color:"#ff4d8d", fontWeight:700, fontSize:13, marginLeft:16, flexShrink:0}}>{fmt(t.amount)}</div>
+            </div>
+          ))
+        }
       </div>
+
     </div>
   );
 }
@@ -554,68 +750,6 @@ function Transactions({ transactions, onDeleted }) {
               ))}</tbody>
             </table>
           </div>}
-      </div>
-    </div>
-  );
-}
-
-function Charts({ budget, transactions }) {
-  const now = new Date();
-  const [view, setView] = useState("monthly");
-  const [m, setM] = useState(now.getMonth());
-  const [y, setY] = useState(now.getFullYear());
-  const cats = Object.keys(budget);
-  const totalBudgetAll = Object.values(budget).reduce((a,b)=>a+b,0);
-  const txns = view==="monthly" ? transactions.filter(t=>{const d=new Date(t.date);return d.getMonth()===m&&d.getFullYear()===y;}) : transactions.filter(t=>new Date(t.date).getFullYear()===y);
-  const spend={}; txns.forEach(t=>{spend[t.category]=(spend[t.category]||0)+t.amount;});
-  const activeCats=cats.filter(c=>budget[c]>0||(spend[c]||0)>0);
-  const spentCats=activeCats.filter(c=>(spend[c]||0)>0);
-  const dayLabels=view==="monthly"?Array.from({length:31},(_,i)=>String(i+1)):MONTHS_SHORT;
-  const dayData=view==="monthly"?dayLabels.map(d=>{const map={};txns.forEach(t=>{const dd=new Date(t.date).getDate();map[dd]=(map[dd]||0)+t.amount;});return map[+d]||0;}):MONTHS_SHORT.map((_,mi)=>transactions.filter(t=>{const dt=new Date(t.date);return dt.getFullYear()===y&&dt.getMonth()===mi;}).reduce((s,t)=>s+t.amount,0));
-  const monthlyTotals=MONTHS_SHORT.map((_,mi)=>transactions.filter(t=>{const dt=new Date(t.date);return dt.getFullYear()===y&&dt.getMonth()===mi;}).reduce((s,t)=>s+t.amount,0));
-  const over=activeCats.filter(c=>(spend[c]||0)>budget[c]&&budget[c]>0).map(c=>({cat:c,diff:(spend[c]||0)-budget[c]})).sort((a,b)=>b.diff-a.diff);
-  const under=activeCats.filter(c=>(spend[c]||0)<budget[c]&&budget[c]>0).map(c=>({cat:c,diff:budget[c]-(spend[c]||0)})).sort((a,b)=>b.diff-a.diff);
-
-  return (
-    <div>
-      <div className="mf-topbar">
-        <h2>Charts & Insights</h2>
-        <div className="mf-filters">
-          <select className="mf-sel" value={view} onChange={e=>setView(e.target.value)}><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select>
-          {view==="monthly"&&<select className="mf-sel" value={m} onChange={e=>setM(+e.target.value)}>{MONTHS.map((mo,i)=><option key={i} value={i}>{mo}</option>)}</select>}
-          <select className="mf-sel" value={y} onChange={e=>setY(+e.target.value)}>{YEARS.map(yr=><option key={yr} value={yr}>{yr}</option>)}</select>
-        </div>
-      </div>
-      <div className="mf-sec">
-        <div className="mf-sec-title">Budget vs Actual (₹)</div>
-        {activeCats.length?<BarChart labels={activeCats} datasets={[{label:"Budget",data:activeCats.map(c=>budget[c]||0),color:"#00e5cc"},{label:"Actual",data:activeCats.map(c=>spend[c]||0),colors:activeCats.map(c=>(spend[c]||0)>(budget[c]||0)?"#ff4d6d":"#00d68f"),color:"#00d68f"}]} height={280}/>:<div style={{color:"#5a6490",fontSize:13}}>No data yet</div>}
-      </div>
-      <div className="mf-chart-2col">
-        <div className="mf-sec">
-          <div className="mf-sec-title">Spending by Category</div>
-          {spentCats.length?<DonutChart labels={spentCats} data={spentCats.map(c=>spend[c])} colors={PIE_COLORS}/>:<div style={{color:"#5a6490",fontSize:13,padding:"20px 0"}}>No spending data</div>}
-        </div>
-        <div className="mf-sec">
-          <div className="mf-sec-title">{view==="monthly"?"Day-wise":"Month-wise"} Spending</div>
-          <BarChart labels={dayLabels} datasets={[{label:"Spent",data:dayData,color:"#ffb830"}]} height={220}/>
-        </div>
-      </div>
-      <div className="mf-sec">
-        <div className="mf-sec-title">Monthly Trend {y}</div>
-        <LineChart labels={MONTHS_SHORT} datasets={[{label:"Spent",data:monthlyTotals,color:"#ff4d8d",fill:true},{label:"Budget",data:MONTHS_SHORT.map(()=>totalBudgetAll),color:"#00e5cc",dash:true}]} height={200}/>
-      </div>
-      <div className="mf-sec">
-        <div className="mf-sec-title">Over / Under Budget Summary</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-          <div>
-            <div style={{fontSize:11,color:"#ff4d6d",textTransform:"uppercase",letterSpacing:".8px",marginBottom:10}}>🔴 Over Budget</div>
-            {over.length?over.map(({cat,diff})=>(<div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,.04)",fontSize:13}}><span style={{color:"#e8eaf6"}}>{cat}</span><span style={{color:"#ff4d6d",fontWeight:600}}>+{fmt(diff)}</span></div>)):<div style={{color:"#5a6490",fontSize:13,padding:"12px 0"}}>All good! 🎉</div>}
-          </div>
-          <div>
-            <div style={{fontSize:11,color:"#00d68f",textTransform:"uppercase",letterSpacing:".8px",marginBottom:10}}>🟢 Under Budget</div>
-            {under.map(({cat,diff})=>(<div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,.04)",fontSize:13}}><span style={{color:"#e8eaf6"}}>{cat}</span><span style={{color:"#00d68f",fontWeight:600}}>{fmt(diff)} left</span></div>))}
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -1160,7 +1294,6 @@ export default function App() {
     {id:"dashboard",icon:"📊",label:"Dashboard"},
     {id:"add",icon:"➕",label:"Add"},
     {id:"transactions",icon:"📋",label:"Transactions"},
-    {id:"charts",icon:"📈",label:"Charts"},
     {id:"budget",icon:"🎯",label:"Budget"},
     {id:"feedback",icon:"💬",label:"Feedback"},
     {id:"profile",icon:"👤",label:"Profile"},
@@ -1196,7 +1329,6 @@ export default function App() {
         {page==="dashboard"    && <Dashboard budget={budget} transactions={transactions} selMonth={selMonth} setSelMonth={setSelMonth} selYear={selYear} setSelYear={setSelYear}/>}
         {page==="add"          && <AddExpense budget={budget} onSaved={loadTransactions}/>}
         {page==="transactions" && <Transactions transactions={transactions} onDeleted={loadTransactions}/>}
-        {page==="charts"       && <Charts budget={budget} transactions={transactions}/>}
         {page==="budget"       && <BudgetPage budget={budget} onSaved={loadBudget}/>}
         {page==="feedback"     && <FeedbackBoard session={session} profile={profile}/>}
         {page==="profile"      && <ProfilePage session={session} profile={profile} onProfileUpdated={loadProfile}/>}
