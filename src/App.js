@@ -151,7 +151,23 @@ const CSS = `
   .mf-profile-avatar { width: 72px; height: 72px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700; margin: 0 auto 16px; }
   .mf-divider { height: 1px; background: rgba(255,255,255,.07); margin: 20px 0; }
 
-  @media (max-width: 768px) {
+  /* Ledger */
+  .mf-person-card { background:#0d1130; border:1px solid rgba(255,255,255,.07); border-radius:12px; padding:14px 16px; cursor:pointer; transition:border-color .2s; margin-bottom:10px; }
+  .mf-person-card:hover { border-color:rgba(0,229,204,.3); }
+  .mf-badge { display:inline-flex; align-items:center; padding:3px 10px; border-radius:99px; font-size:11px; font-weight:600; }
+  .mf-badge-red { background:rgba(255,77,109,.15); color:#ff4d6d; }
+  .mf-badge-green { background:rgba(0,214,143,.15); color:#00d68f; }
+  .mf-badge-settled { background:rgba(255,255,255,.07); color:#5a6490; }
+  .mf-entry-row { display:flex; align-items:flex-start; gap:12px; padding:12px 0; border-bottom:1px solid rgba(255,255,255,.05); }
+  .mf-entry-row:last-child { border-bottom:none; }
+  .mf-entry-icon { width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; }
+  .mf-reminder-badge { display:inline-flex; align-items:center; gap:4px; font-size:10px; padding:2px 7px; border-radius:99px; background:rgba(255,184,48,.12); color:#ffb830; margin-top:4px; }
+  .mf-attachment-thumb { width:48px; height:48px; border-radius:6px; object-fit:cover; border:1px solid rgba(255,255,255,.1); cursor:pointer; flex-shrink:0; }
+  .mf-lightbox { position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:500; display:flex; align-items:center; justify-content:center; padding:20px; }
+  .mf-lightbox img { max-width:100%; max-height:90vh; border-radius:10px; }
+  .mf-net-positive { color:#ff4d6d; }
+  .mf-net-negative { color:#00d68f; }
+
     .mf-sidebar { transform: translateX(-100%); }
     .mf-sidebar.open { transform: translateX(0); box-shadow: 4px 0 30px rgba(0,0,0,.6); }
     .mf-overlay.open { display: block; }
@@ -1237,6 +1253,417 @@ function ThreadDetail({ thread, session, profile, onBack }) {
   );
 }
 
+/* ══ LEDGER ══ */
+
+const ENTRY_META = {
+  given:        { label:"Given",        icon:"💸", bg:"rgba(255,77,109,.12)",  color:"#ff4d8d",  sign:+1 },
+  received_back:{ label:"Received Back",icon:"✅", bg:"rgba(0,214,143,.12)",   color:"#00d68f",  sign:-1 },
+  borrowed:     { label:"Borrowed",     icon:"🤝", bg:"rgba(0,229,204,.12)",   color:"#00e5cc",  sign:-1 },
+  returned:     { label:"Returned",     icon:"↩️", bg:"rgba(167,139,250,.12)", color:"#a78bfa",  sign:+1 },
+};
+
+// Net balance per person:
+// given → you should get back (+)
+// received_back → reduces what they owe (-)
+// borrowed → you owe them (+)
+// returned → reduces what you owe (-)
+function calcNet(entries) {
+  return entries.filter(e=>!e.settled).reduce((sum,e)=>{
+    if (e.type==="given") return sum + e.amount;
+    if (e.type==="received_back") return sum - e.amount;
+    if (e.type==="borrowed") return sum - e.amount;
+    if (e.type==="returned") return sum + e.amount;
+    return sum;
+  },0);
+}
+
+function LedgerPage({ session }) {
+  const [view, setView] = useState("list"); // list | person | add_person | add_entry
+  const [people, setPeople] = useState([]);
+  const [selPerson, setSelPerson] = useState(null);
+  const [entries, setEntries] = useState([]);
+  const [lightbox, setLightbox] = useState(null);
+  const [overduePeople, setOverduePeople] = useState([]);
+  const { confirm, modal } = useConfirm();
+
+  // Person form
+  const [pName, setPName] = useState(""); const [pPhone, setPPhone] = useState("");
+  const [pNotes, setPNotes] = useState(""); const [pSaving, setPSaving] = useState(false);
+  const [pMsg, setPMsg] = useState(null);
+
+  // Entry form
+  const [eType, setEType] = useState("given"); const [eAmount, setEAmount] = useState("");
+  const [eNote, setENote] = useState(""); const [eDate, setEDate] = useState(new Date().toISOString().slice(0,10));
+  const [eReminder, setEReminder] = useState(""); const [eFile, setEFile] = useState(null);
+  const [eUploading, setEUploading] = useState(false); const [eMsg, setEMsg] = useState(null);
+
+  const loadPeople = useCallback(async()=>{
+    const {data}=await supabase.from("ledger_people").select("*").eq("user_id",session.user.id).order("name");
+    if(data) setPeople(data);
+  },[session]);
+
+  const loadEntries = useCallback(async(personId)=>{
+    const {data}=await supabase.from("ledger_entries").select("*").eq("person_id",personId).order("date",{ascending:false});
+    if(data) setEntries(data);
+  },[]);
+
+  useEffect(()=>{ loadPeople(); },[loadPeople]);
+
+  // Check overdue reminders on load
+  useEffect(()=>{
+    const today=new Date().toISOString().slice(0,10);
+    const due=people.filter(p=>{
+      // we'll check after loading entries - simplified: flag people with any overdue
+      return false; // will update after loading all entries
+    });
+  },[people]);
+
+  // Browser notification permission
+  const requestNotifPermission = async()=>{
+    if(!("Notification" in window)) return;
+    if(Notification.permission==="default") await Notification.requestPermission();
+  };
+  useEffect(()=>{ requestNotifPermission(); },[]);
+
+  // Check reminders across all entries
+  useEffect(()=>{
+    if(!people.length) return;
+    const checkReminders = async()=>{
+      const today=new Date().toISOString().slice(0,10);
+      const {data}=await supabase.from("ledger_entries").select("*,ledger_people(name)")
+        .eq("user_id",session.user.id).eq("settled",false).lte("reminder_date",today).not("reminder_date","is",null);
+      if(data&&data.length){
+        setOverduePeople(data);
+        // Browser notification
+        if(Notification.permission==="granted"){
+          data.forEach(e=>{
+            new Notification("Monefy Reminder 💰",{
+              body:`${e.type==="given"?"💸":"🤝"} ${e.ledger_people?.name||"Someone"} — ${fmt(e.amount)} is due!`,
+              icon:"/favicon.ico"
+            });
+          });
+        }
+      }
+    };
+    checkReminders();
+  },[people,session]);
+
+  const savePerson = async()=>{
+    if(!pName.trim()){setPMsg({t:"err",m:"Name is required"});return;}
+    setPSaving(true);
+    const {error}=await supabase.from("ledger_people").insert({user_id:session.user.id,name:pName.trim(),phone:pPhone.trim()||null,notes:pNotes.trim()||null});
+    setPSaving(false);
+    if(error){setPMsg({t:"err",m:"Error saving."});return;}
+    setPMsg({t:"ok",m:"Person added! ✓"});
+    setPName(""); setPPhone(""); setPNotes("");
+    loadPeople();
+    setTimeout(()=>{setPMsg(null);setView("list");},1200);
+  };
+
+  const deletePerson = async(id)=>{
+    const ok=await confirm({icon:"👤",title:"Remove Person",message:"This will delete all entries for this person too.",confirmLabel:"Remove"});
+    if(!ok) return;
+    await supabase.from("ledger_entries").delete().eq("person_id",id);
+    await supabase.from("ledger_people").delete().eq("id",id);
+    loadPeople(); setView("list");
+  };
+
+  const openPerson = async(p)=>{
+    setSelPerson(p); setView("person"); await loadEntries(p.id);
+  };
+
+  const saveEntry = async()=>{
+    if(!eAmount||!eDate){setEMsg({t:"err",m:"Amount and date are required"});return;}
+    setEUploading(true);
+    let attachment_url=null;
+    if(eFile){
+      const ext=eFile.name.split(".").pop();
+      const path=`${session.user.id}/${Date.now()}.${ext}`;
+      const {error:upErr}=await supabase.storage.from("ledger-attachments").upload(path,eFile,{upsert:true});
+      if(!upErr){const {data}=supabase.storage.from("ledger-attachments").getPublicUrl(path);attachment_url=data.publicUrl;}
+    }
+    const {error}=await supabase.from("ledger_entries").insert({
+      user_id:session.user.id, person_id:selPerson.id,
+      type:eType, amount:parseFloat(eAmount), note:eNote.trim()||null,
+      date:eDate, reminder_date:eReminder||null, attachment_url, settled:false
+    });
+    setEUploading(false);
+    if(error){setEMsg({t:"err",m:"Error saving."});return;}
+    setEMsg({t:"ok",m:"Entry saved! ✓"});
+    setEAmount(""); setENote(""); setEReminder(""); setEFile(null);
+    loadEntries(selPerson.id);
+    setTimeout(()=>{setEMsg(null);setView("person");},1000);
+  };
+
+  const settleEntry = async(entry)=>{
+    const ok=await confirm({icon:"✅",title:"Mark as Settled",message:`Mark ${fmt(entry.amount)} as fully settled?`,confirmLabel:"Settle",danger:false});
+    if(!ok) return;
+    await supabase.from("ledger_entries").update({settled:true}).eq("id",entry.id);
+    loadEntries(selPerson.id);
+  };
+
+  const deleteEntry = async(id)=>{
+    const ok=await confirm({icon:"🗑️",title:"Delete Entry",message:"This entry will be permanently removed.",confirmLabel:"Delete"});
+    if(!ok) return;
+    await supabase.from("ledger_entries").delete().eq("id",id);
+    loadEntries(selPerson.id);
+  };
+
+  const CC={
+    card:{background:"#0d1130",border:"1px solid rgba(255,255,255,.07)",borderRadius:12,padding:"16px 18px"},
+    sec:{background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.07)",borderRadius:14,padding:"18px 22px",marginBottom:16},
+  };
+
+  // ── Person List view ──
+  if(view==="list") return (
+    <div>
+      {modal}
+      {lightbox&&<div className="mf-lightbox" onClick={()=>setLightbox(null)}><img src={lightbox} alt="attachment"/></div>}
+
+      <div className="mf-topbar">
+        <h2>Ledger</h2>
+        <button className="mf-btn-p" onClick={()=>setView("add_person")}>+ Add Person</button>
+      </div>
+
+      {/* Overdue reminders banner */}
+      {overduePeople.length>0&&(
+        <div style={{background:"rgba(255,184,48,.1)",border:"1px solid rgba(255,184,48,.3)",borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:18}}>⏰</span>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:"#ffb830"}}>Payment Reminders Due</div>
+            <div style={{fontSize:12,color:"#9ba5c9",marginTop:2}}>{overduePeople.length} {overduePeople.length===1?"entry":"entries"} past reminder date — check your ledger!</div>
+          </div>
+        </div>
+      )}
+
+      {/* Summary cards */}
+      {(()=>{
+        const allGiven=people.reduce((s,p)=>s,0);
+        let totalOwedToMe=0, totalIOwe=0;
+        // We'll compute this more accurately once we have all entries
+        return null;
+      })()}
+
+      {people.length===0
+        ?<div style={{...CC.card,textAlign:"center",padding:"40px 20px"}}>
+          <div style={{fontSize:40,marginBottom:12}}>🤝</div>
+          <div style={{fontSize:15,fontWeight:600,color:"#e8eaf6",marginBottom:6}}>No people yet</div>
+          <div style={{fontSize:13,color:"#5a6490",marginBottom:20}}>Add friends and family to track money given or received</div>
+          <button className="mf-btn-p" onClick={()=>setView("add_person")}>Add First Person</button>
+        </div>
+        :<div>
+          {people.map(p=><PersonCard key={p.id} person={p} session={session} onClick={()=>openPerson(p)} onDelete={()=>deletePerson(p.id)} overdue={overduePeople.some(e=>e.person_id===p.id)}/>)}
+        </div>
+      }
+    </div>
+  );
+
+  // ── Add Person view ──
+  if(view==="add_person") return (
+    <div>
+      {modal}
+      <div className="mf-back-btn" onClick={()=>setView("list")}>← Back to Ledger</div>
+      <div className="mf-topbar"><h2>Add Person</h2></div>
+      <div style={{...CC.sec,maxWidth:500}}>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div className="mf-form-group"><label className="mf-form-label">Name *</label><input type="text" className="mf-inp" value={pName} onChange={e=>setPName(e.target.value)} placeholder="e.g. Rahul, Papa"/></div>
+          <div className="mf-form-group"><label className="mf-form-label">Phone</label><input type="tel" className="mf-inp" value={pPhone} onChange={e=>setPPhone(e.target.value)} placeholder="+91 98765 43210"/></div>
+          <div className="mf-form-group"><label className="mf-form-label">Notes</label><textarea className="mf-textarea" value={pNotes} onChange={e=>setPNotes(e.target.value)} placeholder="Any notes about this person…" style={{minHeight:70}}/></div>
+        </div>
+        <div style={{marginTop:16,display:"flex",gap:10}}>
+          <button className="mf-btn-p" onClick={savePerson} disabled={pSaving}>{pSaving?"Saving…":"Save Person"}</button>
+          <button className="mf-btn-g" onClick={()=>setView("list")}>Cancel</button>
+        </div>
+        {pMsg&&<div className={pMsg.t==="ok"?"mf-msg-ok":"mf-msg-err"}>{pMsg.m}</div>}
+      </div>
+    </div>
+  );
+
+  // ── Add Entry view ──
+  if(view==="add_entry") return (
+    <div>
+      {modal}
+      <div className="mf-back-btn" onClick={()=>setView("person")}>← Back to {selPerson?.name}</div>
+      <div className="mf-topbar"><h2>Add Entry</h2></div>
+      <div style={{...CC.sec,maxWidth:520}}>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div className="mf-form-group">
+            <label className="mf-form-label">Type</label>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {Object.entries(ENTRY_META).map(([k,v])=>(
+                <button key={k} onClick={()=>setEType(k)} style={{padding:"10px 12px",borderRadius:9,border:`1px solid ${eType===k?v.color:"rgba(255,255,255,.1)"}`,background:eType===k?v.bg:"transparent",color:eType===k?v.color:"#9ba5c9",cursor:"pointer",fontSize:13,fontWeight:500,display:"flex",alignItems:"center",gap:6,transition:"all .15s"}}>
+                  <span>{v.icon}</span>{v.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="mf-form-grid">
+            <div className="mf-form-group"><label className="mf-form-label">Amount (₹) *</label><input type="number" className="mf-inp" value={eAmount} onChange={e=>setEAmount(e.target.value)} placeholder="0.00" min="0" step="0.01"/></div>
+            <div className="mf-form-group"><label className="mf-form-label">Date *</label><input type="date" className="mf-inp" value={eDate} onChange={e=>setEDate(e.target.value)}/></div>
+          </div>
+          <div className="mf-form-group"><label className="mf-form-label">Note</label><input type="text" className="mf-inp" value={eNote} onChange={e=>setENote(e.target.value)} placeholder="What is this for?"/></div>
+          <div className="mf-form-group">
+            <label className="mf-form-label">Reminder Date <span style={{color:"#5a6490",fontWeight:400}}>(optional)</span></label>
+            <input type="date" className="mf-inp" value={eReminder} onChange={e=>setEReminder(e.target.value)}/>
+          </div>
+          <div className="mf-form-group">
+            <label className="mf-form-label">Attachment <span style={{color:"#5a6490",fontWeight:400}}>(screenshot, optional)</span></label>
+            <input type="file" accept="image/*,application/pdf" onChange={e=>setEFile(e.target.files[0])} style={{color:"#9ba5c9",fontSize:13}}/>
+            {eFile&&<div style={{fontSize:11,color:"#00d68f",marginTop:4}}>📎 {eFile.name}</div>}
+          </div>
+        </div>
+        <div style={{marginTop:16,display:"flex",gap:10,flexWrap:"wrap"}}>
+          <button className="mf-btn-p" onClick={saveEntry} disabled={eUploading}>{eUploading?"Saving…":"Save Entry"}</button>
+          <button className="mf-btn-g" onClick={()=>setView("person")}>Cancel</button>
+        </div>
+        {eMsg&&<div className={eMsg.t==="ok"?"mf-msg-ok":"mf-msg-err"}>{eMsg.m}</div>}
+      </div>
+    </div>
+  );
+
+  // ── Person Detail view ──
+  if(view==="person"&&selPerson) {
+    const net=calcNet(entries);
+    const youOweTotal = entries.filter(e=>!e.settled&&(e.type==="borrowed"||e.type==="returned")).reduce((s,e)=>e.type==="borrowed"?s+e.amount:s-e.amount,0);
+    const theyOweTotal = entries.filter(e=>!e.settled&&(e.type==="given"||e.type==="received_back")).reduce((s,e)=>e.type==="given"?s+e.amount:s-e.amount,0);
+    const activeEntries=entries.filter(e=>!e.settled);
+    const settledEntries=entries.filter(e=>e.settled);
+    const today=new Date().toISOString().slice(0,10);
+
+    return (
+      <div>
+        {modal}
+        {lightbox&&<div className="mf-lightbox" onClick={()=>setLightbox(null)}><img src={lightbox} alt="attachment"/></div>}
+        <div className="mf-back-btn" onClick={()=>{setView("list");loadPeople();}}>← Back to Ledger</div>
+
+        {/* Person header */}
+        <div style={{...CC.card,marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:14}}>
+            <div style={{width:48,height:48,borderRadius:"50%",background:"rgba(0,229,204,.12)",border:"1px solid rgba(0,229,204,.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:700,color:"#00e5cc",flexShrink:0}}>
+              {selPerson.name[0].toUpperCase()}
+            </div>
+            <div>
+              <div style={{fontSize:17,fontWeight:700,color:"#e8eaf6"}}>{selPerson.name}</div>
+              {selPerson.phone&&<div style={{fontSize:12,color:"#5a6490",marginTop:2}}>📞 {selPerson.phone}</div>}
+              {selPerson.notes&&<div style={{fontSize:12,color:"#9ba5c9",marginTop:2}}>{selPerson.notes}</div>}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button className="mf-btn-p" onClick={()=>setView("add_entry")}>+ Add Entry</button>
+            <button className="mf-btn-d" onClick={()=>deletePerson(selPerson.id)}>Remove</button>
+          </div>
+        </div>
+
+        {/* Balance summary */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+          <div style={{...CC.card,textAlign:"center"}}>
+            <div style={{fontSize:11,color:"#5a6490",marginBottom:6}}>They Owe You</div>
+            <div style={{fontSize:22,fontWeight:700,color:theyOweTotal>0?"#ff4d8d":"#5a6490"}}>{fmt(Math.max(0,theyOweTotal))}</div>
+            <div style={{fontSize:11,color:"#5a6490",marginTop:4}}>pending receivable</div>
+          </div>
+          <div style={{...CC.card,textAlign:"center"}}>
+            <div style={{fontSize:11,color:"#5a6490",marginBottom:6}}>You Owe Them</div>
+            <div style={{fontSize:22,fontWeight:700,color:youOweTotal>0?"#00e5cc":"#5a6490"}}>{fmt(Math.max(0,youOweTotal))}</div>
+            <div style={{fontSize:11,color:"#5a6490",marginTop:4}}>pending payable</div>
+          </div>
+        </div>
+
+        {/* Active entries */}
+        <div style={CC.sec}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+            <div className="mf-sec-title" style={{marginBottom:0}}>Active Entries ({activeEntries.length})</div>
+          </div>
+          {activeEntries.length===0
+            ?<div style={{color:"#5a6490",fontSize:13,padding:"16px 0",textAlign:"center"}}>No active entries. Add one above!</div>
+            :activeEntries.map(e=><EntryRow key={e.id} entry={e} onSettle={settleEntry} onDelete={deleteEntry} onLightbox={setLightbox} today={today}/>)
+          }
+        </div>
+
+        {/* Settled entries */}
+        {settledEntries.length>0&&(
+          <div style={CC.sec}>
+            <div className="mf-sec-title">Settled ({settledEntries.length})</div>
+            {settledEntries.map(e=><EntryRow key={e.id} entry={e} onSettle={null} onDelete={deleteEntry} onLightbox={setLightbox} today={today}/>)}
+          </div>
+        )}
+      </div>
+    );
+  }
+  return null;
+}
+
+/* ── PersonCard — shown in list view ── */
+function PersonCard({ person, session, onClick, onDelete, overdue }) {
+  const [net, setNet] = useState(null);
+  useEffect(()=>{
+    supabase.from("ledger_entries").select("type,amount,settled").eq("person_id",person.id).then(({data})=>{
+      if(data) setNet(calcNet(data));
+    });
+  },[person.id]);
+
+  const color = net===null?"#5a6490":net>0?"#ff4d8d":net<0?"#00e5cc":"#5a6490";
+  const label = net===null?"Loading…":net>0?`${fmt(net)} to receive`:net<0?`${fmt(Math.abs(net))} you owe`:"Settled ✓";
+
+  return (
+    <div className="mf-person-card" onClick={onClick}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>
+          <div style={{width:40,height:40,borderRadius:"50%",background:"rgba(0,229,204,.1)",border:"1px solid rgba(0,229,204,.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:"#00e5cc",flexShrink:0}}>
+            {person.name[0].toUpperCase()}
+          </div>
+          <div style={{minWidth:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:14,fontWeight:600,color:"#e8eaf6"}}>{person.name}</span>
+              {overdue&&<span style={{fontSize:10,background:"rgba(255,184,48,.15)",color:"#ffb830",padding:"1px 6px",borderRadius:99}}>⏰ Due</span>}
+            </div>
+            {person.phone&&<div style={{fontSize:11,color:"#5a6490"}}>📞 {person.phone}</div>}
+          </div>
+        </div>
+        <div style={{textAlign:"right",flexShrink:0}}>
+          <div style={{fontSize:14,fontWeight:700,color}}>{label}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── EntryRow ── */
+function EntryRow({ entry, onSettle, onDelete, onLightbox, today }) {
+  const meta = ENTRY_META[entry.type]||ENTRY_META.given;
+  const isOverdue = entry.reminder_date&&entry.reminder_date<=today&&!entry.settled;
+
+  return (
+    <div className="mf-entry-row">
+      <div className="mf-entry-icon" style={{background:meta.bg}}>
+        <span>{meta.icon}</span>
+      </div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:3}}>
+          <span style={{fontSize:13,fontWeight:600,color:meta.color}}>{meta.label}</span>
+          <span style={{fontSize:14,fontWeight:700,color:"#e8eaf6"}}>{fmt(entry.amount)}</span>
+          {entry.settled&&<span className="mf-badge mf-badge-settled">Settled</span>}
+        </div>
+        {entry.note&&<div style={{fontSize:12,color:"#9ba5c9",marginBottom:3}}>{entry.note}</div>}
+        <div style={{fontSize:11,color:"#5a6490"}}>📅 {entry.date}</div>
+        {entry.reminder_date&&(
+          <div className="mf-reminder-badge">
+            ⏰ Reminder: {entry.reminder_date} {isOverdue&&<span style={{color:"#ff4d6d",fontWeight:600}}>— OVERDUE</span>}
+          </div>
+        )}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end",flexShrink:0}}>
+        {entry.attachment_url&&(
+          <img src={entry.attachment_url} className="mf-attachment-thumb" alt="attachment" onClick={()=>onLightbox(entry.attachment_url)}/>
+        )}
+        {!entry.settled&&onSettle&&(
+          <button className="mf-btn-sm" style={{fontSize:11,padding:"4px 10px",background:"linear-gradient(135deg,#00d68f,#00b874)",whiteSpace:"nowrap"}} onClick={()=>onSettle(entry)}>✓ Settle</button>
+        )}
+        <button className="mf-btn-d" style={{fontSize:11,padding:"3px 8px"}} onClick={()=>onDelete(entry.id)}>🗑</button>
+      </div>
+    </div>
+  );
+}
+
 /* ══ ROOT APP ══ */
 export default function App() {
   const [session, setSession] = useState(undefined);
@@ -1295,6 +1722,7 @@ export default function App() {
     {id:"add",icon:"➕",label:"Add"},
     {id:"transactions",icon:"📋",label:"Transactions"},
     {id:"budget",icon:"🎯",label:"Budget"},
+    {id:"ledger",icon:"🤝",label:"Ledger"},
     {id:"feedback",icon:"💬",label:"Feedback"},
     {id:"profile",icon:"👤",label:"Profile"},
   ];
@@ -1330,6 +1758,7 @@ export default function App() {
         {page==="add"          && <AddExpense budget={budget} onSaved={loadTransactions}/>}
         {page==="transactions" && <Transactions transactions={transactions} onDeleted={loadTransactions}/>}
         {page==="budget"       && <BudgetPage budget={budget} onSaved={loadBudget}/>}
+        {page==="ledger"       && <LedgerPage session={session}/>}
         {page==="feedback"     && <FeedbackBoard session={session} profile={profile}/>}
         {page==="profile"      && <ProfilePage session={session} profile={profile} onProfileUpdated={loadProfile}/>}
       </main>
