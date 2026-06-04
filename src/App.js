@@ -1418,7 +1418,7 @@ function LedgerPage({ session }) {
   if(view==="list") return (
     <div>
       {modal}
-      {lightbox&&<div className="mf-lightbox" onClick={()=>setLightbox(null)}><img src={lightbox} alt="attachment"/></div>}
+      {lightbox&&<div className="mf-lightbox" onClick={()=>setLightbox(null)}><img src={lightbox} alt="attachment"/><div style={{position:"absolute",top:16,right:16,color:"#fff",fontSize:24,cursor:"pointer",background:"rgba(0,0,0,.5)",borderRadius:"50%",width:36,height:36,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setLightbox(null)}>✕</div></div>}
 
       <div className="mf-topbar">
         <h2>Ledger</h2>
@@ -1436,13 +1436,8 @@ function LedgerPage({ session }) {
         </div>
       )}
 
-      {/* Summary cards */}
-      {(()=>{
-        const allGiven=people.reduce((s,p)=>s,0);
-        let totalOwedToMe=0, totalIOwe=0;
-        // We'll compute this more accurately once we have all entries
-        return null;
-      })()}
+      {/* Net worth summary across all people */}
+      <NetWorthSummary session={session} people={people}/>
 
       {people.length===0
         ?<div style={{...CC.card,textAlign:"center",padding:"40px 20px"}}>
@@ -1502,18 +1497,39 @@ function LedgerPage({ session }) {
             <div className="mf-form-group"><label className="mf-form-label">Date *</label><input type="date" className="mf-inp" value={eDate} onChange={e=>setEDate(e.target.value)}/></div>
           </div>
           <div className="mf-form-group"><label className="mf-form-label">Note</label><input type="text" className="mf-inp" value={eNote} onChange={e=>setENote(e.target.value)} placeholder="What is this for?"/></div>
+
+          {/* Reminder date with clear button */}
           <div className="mf-form-group">
             <label className="mf-form-label">Reminder Date <span style={{color:"#5a6490",fontWeight:400}}>(optional)</span></label>
-            <input type="date" className="mf-inp" value={eReminder} onChange={e=>setEReminder(e.target.value)}/>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <input type="date" className="mf-inp" value={eReminder} onChange={e=>setEReminder(e.target.value)} style={{flex:1}}/>
+              {eReminder&&(
+                <button onClick={()=>setEReminder("")} style={{padding:"9px 14px",borderRadius:9,border:"1px solid rgba(255,255,255,.1)",background:"rgba(255,255,255,.06)",color:"#9ba5c9",cursor:"pointer",fontSize:12,flexShrink:0,whiteSpace:"nowrap"}}>✕ Clear</button>
+              )}
+            </div>
+            {eReminder&&<div style={{fontSize:11,color:"#ffb830",marginTop:4}}>⏰ You'll be reminded on {eReminder}</div>}
           </div>
+
+          {/* Attachment */}
           <div className="mf-form-group">
             <label className="mf-form-label">Attachment <span style={{color:"#5a6490",fontWeight:400}}>(screenshot, optional)</span></label>
-            <input type="file" accept="image/*,application/pdf" onChange={e=>setEFile(e.target.files[0])} style={{color:"#9ba5c9",fontSize:13}}/>
-            {eFile&&<div style={{fontSize:11,color:"#00d68f",marginTop:4}}>📎 {eFile.name}</div>}
+            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+              <label style={{padding:"8px 14px",borderRadius:8,border:"1px solid rgba(0,229,204,.3)",background:"rgba(0,229,204,.08)",color:"#00e5cc",fontSize:12,cursor:"pointer",fontWeight:500,flexShrink:0}}>
+                📎 Choose File
+                <input type="file" accept="image/*,application/pdf" onChange={e=>setEFile(e.target.files[0])} style={{display:"none"}}/>
+              </label>
+              {eFile
+                ?<div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:11,color:"#00d68f"}}>📎 {eFile.name}</span>
+                    <button onClick={()=>setEFile(null)} style={{padding:"3px 8px",borderRadius:6,border:"1px solid rgba(255,77,109,.3)",background:"rgba(255,77,109,.1)",color:"#ff4d6d",cursor:"pointer",fontSize:11}}>✕</button>
+                  </div>
+                :<span style={{fontSize:11,color:"#5a6490"}}>No file chosen</span>
+              }
+            </div>
           </div>
         </div>
         <div style={{marginTop:16,display:"flex",gap:10,flexWrap:"wrap"}}>
-          <button className="mf-btn-p" onClick={saveEntry} disabled={eUploading}>{eUploading?"Saving…":"Save Entry"}</button>
+          <button className="mf-btn-p" onClick={saveEntry} disabled={eUploading}>{eUploading?"Uploading…":"Save Entry"}</button>
           <button className="mf-btn-g" onClick={()=>setView("person")}>Cancel</button>
         </div>
         {eMsg&&<div className={eMsg.t==="ok"?"mf-msg-ok":"mf-msg-err"}>{eMsg.m}</div>}
@@ -1523,7 +1539,6 @@ function LedgerPage({ session }) {
 
   // ── Person Detail view ──
   if(view==="person"&&selPerson) {
-    const net=calcNet(entries);
     const youOweTotal = entries.filter(e=>!e.settled&&(e.type==="borrowed"||e.type==="returned")).reduce((s,e)=>e.type==="borrowed"?s+e.amount:s-e.amount,0);
     const theyOweTotal = entries.filter(e=>!e.settled&&(e.type==="given"||e.type==="received_back")).reduce((s,e)=>e.type==="given"?s+e.amount:s-e.amount,0);
     const activeEntries=entries.filter(e=>!e.settled);
@@ -1533,7 +1548,13 @@ function LedgerPage({ session }) {
     return (
       <div>
         {modal}
-        {lightbox&&<div className="mf-lightbox" onClick={()=>setLightbox(null)}><img src={lightbox} alt="attachment"/></div>}
+        {lightbox&&(
+          <div className="mf-lightbox" onClick={()=>setLightbox(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.88)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:20,flexDirection:"column",gap:12}}>
+            <img src={lightbox} alt="attachment" style={{maxWidth:"100%",maxHeight:"80vh",borderRadius:10}}/>
+            <button onClick={()=>setLightbox(null)} style={{padding:"8px 22px",borderRadius:8,border:"none",background:"rgba(255,255,255,.1)",color:"#e8eaf6",cursor:"pointer",fontSize:13}}>✕ Close</button>
+            <a href={lightbox} target="_blank" rel="noreferrer" style={{color:"#00e5cc",fontSize:12,textDecoration:"none"}}>🔗 Open original</a>
+          </div>
+        )}
         <div className="mf-back-btn" onClick={()=>{setView("list");loadPeople();}}>← Back to Ledger</div>
 
         {/* Person header */}
@@ -1554,16 +1575,16 @@ function LedgerPage({ session }) {
           </div>
         </div>
 
-        {/* Balance summary */}
+        {/* Balance summary — 2 cards per person */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-          <div style={{...CC.card,textAlign:"center"}}>
+          <div style={{background:"#0d1130",border:"1px solid rgba(255,255,255,.07)",borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
             <div style={{fontSize:11,color:"#5a6490",marginBottom:6}}>They Owe You</div>
-            <div style={{fontSize:22,fontWeight:700,color:theyOweTotal>0?"#ff4d8d":"#5a6490"}}>{fmt(Math.max(0,theyOweTotal))}</div>
+            <div style={{fontSize:20,fontWeight:700,color:theyOweTotal>0?"#ff4d8d":"#5a6490"}}>{fmt(Math.max(0,theyOweTotal))}</div>
             <div style={{fontSize:11,color:"#5a6490",marginTop:4}}>pending receivable</div>
           </div>
-          <div style={{...CC.card,textAlign:"center"}}>
+          <div style={{background:"#0d1130",border:"1px solid rgba(255,255,255,.07)",borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
             <div style={{fontSize:11,color:"#5a6490",marginBottom:6}}>You Owe Them</div>
-            <div style={{fontSize:22,fontWeight:700,color:youOweTotal>0?"#00e5cc":"#5a6490"}}>{fmt(Math.max(0,youOweTotal))}</div>
+            <div style={{fontSize:20,fontWeight:700,color:youOweTotal>0?"#00e5cc":"#5a6490"}}>{fmt(Math.max(0,youOweTotal))}</div>
             <div style={{fontSize:11,color:"#5a6490",marginTop:4}}>pending payable</div>
           </div>
         </div>
@@ -1575,15 +1596,15 @@ function LedgerPage({ session }) {
           </div>
           {activeEntries.length===0
             ?<div style={{color:"#5a6490",fontSize:13,padding:"16px 0",textAlign:"center"}}>No active entries. Add one above!</div>
-            :activeEntries.map(e=><EntryRow key={e.id} entry={e} onSettle={settleEntry} onDelete={deleteEntry} onLightbox={setLightbox} today={today}/>)
+            :activeEntries.map(e=><EntryRow key={e.id} entry={e} onDelete={deleteEntry} onLightbox={setLightbox} today={today}/>)
           }
         </div>
 
         {/* Settled entries */}
         {settledEntries.length>0&&(
           <div style={CC.sec}>
-            <div className="mf-sec-title">Settled ({settledEntries.length})</div>
-            {settledEntries.map(e=><EntryRow key={e.id} entry={e} onSettle={null} onDelete={deleteEntry} onLightbox={setLightbox} today={today}/>)}
+            <div className="mf-sec-title">Settled History ({settledEntries.length})</div>
+            {settledEntries.map(e=><EntryRow key={e.id} entry={e} onDelete={deleteEntry} onLightbox={setLightbox} today={today}/>)}
           </div>
         )}
       </div>
@@ -1592,8 +1613,56 @@ function LedgerPage({ session }) {
   return null;
 }
 
+/* ── NetWorthSummary — shown on ledger list page ── */
+function NetWorthSummary({ session, people }) {
+  const [totals, setTotals] = useState({owedToMe:0, iOwe:0});
+  useEffect(()=>{
+    if(!people.length) return;
+    supabase.from("ledger_entries").select("type,amount,settled")
+      .eq("user_id",session.user.id).eq("settled",false)
+      .then(({data})=>{
+        if(!data) return;
+        let owedToMe=0, iOwe=0;
+        data.forEach(e=>{
+          if(e.type==="given") owedToMe+=e.amount;
+          if(e.type==="received_back") owedToMe-=e.amount;
+          if(e.type==="borrowed") iOwe+=e.amount;
+          if(e.type==="returned") iOwe-=e.amount;
+        });
+        setTotals({owedToMe:Math.max(0,owedToMe), iOwe:Math.max(0,iOwe)});
+      });
+  },[people, session]);
+
+  if(!people.length) return null;
+  const net = totals.owedToMe - totals.iOwe;
+
+  return (
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:16}}>
+      <div style={{background:"rgba(255,77,141,.08)",border:"1px solid rgba(255,77,141,.2)",borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
+        <div style={{fontSize:10,color:"#5a6490",textTransform:"uppercase",letterSpacing:".8px",marginBottom:6}}>Total Owed to You</div>
+        <div style={{fontSize:20,fontWeight:700,color:"#ff4d8d"}}>{fmt(totals.owedToMe)}</div>
+        <div style={{fontSize:10,color:"#5a6490",marginTop:4}}>across all people</div>
+      </div>
+      <div style={{background:"rgba(0,229,204,.08)",border:"1px solid rgba(0,229,204,.2)",borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
+        <div style={{fontSize:10,color:"#5a6490",textTransform:"uppercase",letterSpacing:".8px",marginBottom:6}}>You Owe Others</div>
+        <div style={{fontSize:20,fontWeight:700,color:"#00e5cc"}}>{fmt(totals.iOwe)}</div>
+        <div style={{fontSize:10,color:"#5a6490",marginTop:4}}>across all people</div>
+      </div>
+      <div style={{background:net>0?"rgba(0,214,143,.08)":net<0?"rgba(255,77,109,.08)":"rgba(255,255,255,.04)",border:`1px solid ${net>0?"rgba(0,214,143,.2)":net<0?"rgba(255,77,109,.2)":"rgba(255,255,255,.08)"}`,borderRadius:12,padding:"14px 16px",textAlign:"center"}}>
+        <div style={{fontSize:10,color:"#5a6490",textTransform:"uppercase",letterSpacing:".8px",marginBottom:6}}>Net Position</div>
+        <div style={{fontSize:20,fontWeight:700,color:net>0?"#00d68f":net<0?"#ff4d6d":"#5a6490"}}>
+          {net===0?"Balanced ✓":net>0?`+${fmt(net)}`:`-${fmt(Math.abs(net))}`}
+        </div>
+        <div style={{fontSize:10,color:net>0?"#00d68f":net<0?"#ff4d6d":"#5a6490",marginTop:4}}>
+          {net>0?"in your favour":net<0?"you owe more":"all clear"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── PersonCard — shown in list view ── */
-function PersonCard({ person, session, onClick, onDelete, overdue }) {
+function PersonCard({ person, onClick, onDelete, overdue }) {
   const [net, setNet] = useState(null);
   useEffect(()=>{
     supabase.from("ledger_entries").select("type,amount,settled").eq("person_id",person.id).then(({data})=>{
@@ -1601,7 +1670,7 @@ function PersonCard({ person, session, onClick, onDelete, overdue }) {
     });
   },[person.id]);
 
-  const color = net===null?"#5a6490":net>0?"#ff4d8d":net<0?"#00e5cc":"#5a6490";
+  const color = net===null?"#5a6490":net>0?"#ff4d8d":net<0?"#00e5cc":"#00d68f";
   const label = net===null?"Loading…":net>0?`${fmt(net)} to receive`:net<0?`${fmt(Math.abs(net))} you owe`:"Settled ✓";
 
   return (
@@ -1612,53 +1681,66 @@ function PersonCard({ person, session, onClick, onDelete, overdue }) {
             {person.name[0].toUpperCase()}
           </div>
           <div style={{minWidth:0}}>
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
               <span style={{fontSize:14,fontWeight:600,color:"#e8eaf6"}}>{person.name}</span>
               {overdue&&<span style={{fontSize:10,background:"rgba(255,184,48,.15)",color:"#ffb830",padding:"1px 6px",borderRadius:99}}>⏰ Due</span>}
             </div>
             {person.phone&&<div style={{fontSize:11,color:"#5a6490"}}>📞 {person.phone}</div>}
+            {person.notes&&<div style={{fontSize:11,color:"#9ba5c9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:180}}>{person.notes}</div>}
           </div>
         </div>
         <div style={{textAlign:"right",flexShrink:0}}>
           <div style={{fontSize:14,fontWeight:700,color}}>{label}</div>
+          <div style={{fontSize:10,color:"#5a6490",marginTop:2}}>tap to view →</div>
         </div>
       </div>
     </div>
   );
 }
 
-/* ── EntryRow ── */
-function EntryRow({ entry, onSettle, onDelete, onLightbox, today }) {
+/* ── EntryRow — settle btn removed, attachment viewer improved ── */
+function EntryRow({ entry, onDelete, onLightbox, today }) {
   const meta = ENTRY_META[entry.type]||ENTRY_META.given;
   const isOverdue = entry.reminder_date&&entry.reminder_date<=today&&!entry.settled;
 
   return (
     <div className="mf-entry-row">
-      <div className="mf-entry-icon" style={{background:meta.bg}}>
+      <div className="mf-entry-icon" style={{background:meta.bg,marginTop:2}}>
         <span>{meta.icon}</span>
       </div>
       <div style={{flex:1,minWidth:0}}>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:3}}>
-          <span style={{fontSize:13,fontWeight:600,color:meta.color}}>{meta.label}</span>
-          <span style={{fontSize:14,fontWeight:700,color:"#e8eaf6"}}>{fmt(entry.amount)}</span>
-          {entry.settled&&<span className="mf-badge mf-badge-settled">Settled</span>}
+          <span style={{fontSize:12,fontWeight:600,color:meta.color}}>{meta.label}</span>
+          <span style={{fontSize:15,fontWeight:700,color:"#e8eaf6"}}>{fmt(entry.amount)}</span>
+          {entry.settled&&<span style={{fontSize:10,background:"rgba(0,214,143,.12)",color:"#00d68f",padding:"2px 7px",borderRadius:99,fontWeight:600}}>✓ Settled</span>}
         </div>
         {entry.note&&<div style={{fontSize:12,color:"#9ba5c9",marginBottom:3}}>{entry.note}</div>}
         <div style={{fontSize:11,color:"#5a6490"}}>📅 {entry.date}</div>
         {entry.reminder_date&&(
-          <div className="mf-reminder-badge">
-            ⏰ Reminder: {entry.reminder_date} {isOverdue&&<span style={{color:"#ff4d6d",fontWeight:600}}>— OVERDUE</span>}
+          <div style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10,padding:"2px 7px",borderRadius:99,background:isOverdue?"rgba(255,77,109,.12)":"rgba(255,184,48,.12)",color:isOverdue?"#ff4d6d":"#ffb830",marginTop:4}}>
+            ⏰ Reminder: {entry.reminder_date}{isOverdue&&<strong> — OVERDUE</strong>}
+          </div>
+        )}
+        {/* Attachment — show as clickable thumbnail + "View" button */}
+        {entry.attachment_url&&(
+          <div style={{marginTop:8,display:"flex",alignItems:"center",gap:8}}>
+            <img
+              src={entry.attachment_url}
+              alt="attachment"
+              style={{width:44,height:44,borderRadius:6,objectFit:"cover",border:"1px solid rgba(255,255,255,.1)",cursor:"pointer",flexShrink:0}}
+              onClick={()=>onLightbox(entry.attachment_url)}
+            />
+            <button
+              onClick={()=>onLightbox(entry.attachment_url)}
+              style={{padding:"4px 10px",borderRadius:7,border:"1px solid rgba(0,229,204,.3)",background:"rgba(0,229,204,.08)",color:"#00e5cc",cursor:"pointer",fontSize:11,fontWeight:500}}
+            >
+              🔍 View Attachment
+            </button>
           </div>
         )}
       </div>
-      <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end",flexShrink:0}}>
-        {entry.attachment_url&&(
-          <img src={entry.attachment_url} className="mf-attachment-thumb" alt="attachment" onClick={()=>onLightbox(entry.attachment_url)}/>
-        )}
-        {!entry.settled&&onSettle&&(
-          <button className="mf-btn-sm" style={{fontSize:11,padding:"4px 10px",background:"linear-gradient(135deg,#00d68f,#00b874)",whiteSpace:"nowrap"}} onClick={()=>onSettle(entry)}>✓ Settle</button>
-        )}
-        <button className="mf-btn-d" style={{fontSize:11,padding:"3px 8px"}} onClick={()=>onDelete(entry.id)}>🗑</button>
+      <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end",flexShrink:0,paddingLeft:8}}>
+        <button className="mf-btn-d" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>onDelete(entry.id)}>🗑 Delete</button>
       </div>
     </div>
   );
