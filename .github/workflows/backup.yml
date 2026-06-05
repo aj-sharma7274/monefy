@@ -1,0 +1,112 @@
+name: Bi-weekly Supabase Backup
+
+on:
+  schedule:
+    # Runs every 2 weeks on Sunday at 2:00 AM IST (8:30 PM UTC Saturday)
+    - cron: '30 20 1,15 * 0'
+  workflow_dispatch: # Allow manual trigger anytime from GitHub Actions tab
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        run: |
+          curl -sSL https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.tar.gz | tar -xz
+          sudo mv supabase /usr/local/bin/
+
+      - name: Create backup folder
+        run: mkdir -p backups
+
+      - name: Export data as JSON (budget)
+        run: |
+          curl -s "$SUPABASE_URL/rest/v1/budget?select=*" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            > backups/budget_$(date +%Y-%m-%d).json
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      - name: Export transactions
+        run: |
+          curl -s "$SUPABASE_URL/rest/v1/transactions?select=*&order=date.desc" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            > backups/transactions_$(date +%Y-%m-%d).json
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      - name: Export ledger people
+        run: |
+          curl -s "$SUPABASE_URL/rest/v1/ledger_people?select=*" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            > backups/ledger_people_$(date +%Y-%m-%d).json
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      - name: Export ledger entries
+        run: |
+          curl -s "$SUPABASE_URL/rest/v1/ledger_entries?select=*&order=date.desc" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            > backups/ledger_entries_$(date +%Y-%m-%d).json
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      - name: Export profiles
+        run: |
+          curl -s "$SUPABASE_URL/rest/v1/profiles?select=*" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            > backups/profiles_$(date +%Y-%m-%d).json
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      - name: Bundle all into one backup file
+        run: |
+          DATE=$(date +%Y-%m-%d)
+          jq -n \
+            --slurpfile budget backups/budget_$DATE.json \
+            --slurpfile transactions backups/transactions_$DATE.json \
+            --slurpfile ledger_people backups/ledger_people_$DATE.json \
+            --slurpfile ledger_entries backups/ledger_entries_$DATE.json \
+            --slurpfile profiles backups/profiles_$DATE.json \
+            '{
+              backup_date: "'$DATE'",
+              budget: $budget[0],
+              transactions: $transactions[0],
+              ledger_people: $ledger_people[0],
+              ledger_entries: $ledger_entries[0],
+              profiles: $profiles[0]
+            }' > backups/monefy_backup_$DATE.json
+          # Remove individual files, keep only the bundle
+          rm -f backups/budget_$DATE.json backups/transactions_$DATE.json
+          rm -f backups/ledger_people_$DATE.json backups/ledger_entries_$DATE.json
+          rm -f backups/profiles_$DATE.json
+
+      - name: Keep only last 10 backups (cleanup old ones)
+        run: |
+          cd backups
+          ls -t monefy_backup_*.json | tail -n +11 | xargs -r rm --
+          echo "Kept backups:"
+          ls -la monefy_backup_*.json || echo "No backups yet"
+
+      - name: Commit backup to repo
+        run: |
+          git config user.name "Monefy Backup Bot"
+          git config user.email "backup@monefy"
+          git add backups/
+          git diff --staged --quiet || git commit -m "🔒 Backup $(date +%Y-%m-%d)"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
