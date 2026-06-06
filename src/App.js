@@ -7,7 +7,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const PIE_COLORS = ["#00e5cc","#ff4d8d","#ffb830","#00d68f","#a78bfa","#60a5fa","#f97316","#34d399","#fb7185","#818cf8","#fbbf24","#4ade80"];
+// PIE_COLORS used in Dashboard via PIE_COLORS_DASH local const
 const YEARS = [2024, 2025, 2026, 2027];
 
 const fmt = (n) => "₹" + Math.round(n).toLocaleString("en-IN");
@@ -420,10 +420,11 @@ function Dashboard({ budget, transactions, selMonth, setSelMonth, selYear, setSe
   },[]);
 
   // Draw all charts when data or month changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(()=>{
     if (!chartsReady || !window.Chart) return;
 
-    const CHART_BG = "rgba(255,255,255,0)";
+    // eslint-disable-next-line no-unused-vars
     const GRID = "rgba(255,255,255,0.06)";
     const TICK = "#5a6490";
     const fmtTick = v => v>=1000?"₹"+Math.round(v/1000)+"k":"₹"+v;
@@ -497,6 +498,7 @@ function Dashboard({ budget, transactions, selMonth, setSelMonth, selYear, setSe
         scales:{x:{ticks:{color:TICK,font:{size:11}},grid:{display:false}},y:{ticks:{color:TICK,font:{size:10},callback:fmtTick},grid:{color:GRID}}}}
     });
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   },[chartsReady, selMonth, selYear, budget, transactions]);
 
   // Cleanup on unmount
@@ -687,6 +689,7 @@ function AddExpense({ budget, onSaved }) {
   const [cat, setCat] = useState(cats[0]||"");
   const [msg, setMsg] = useState(null);
   const [loading, setLoading] = useState(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(()=>{ if(!cat&&cats.length) setCat(cats[0]); },[cats]);
 
   const save = async () => {
@@ -1309,15 +1312,6 @@ function LedgerPage({ session }) {
 
   useEffect(()=>{ loadPeople(); },[loadPeople]);
 
-  // Check overdue reminders on load
-  useEffect(()=>{
-    const today=new Date().toISOString().slice(0,10);
-    const due=people.filter(p=>{
-      // we'll check after loading entries - simplified: flag people with any overdue
-      return false; // will update after loading all entries
-    });
-  },[people]);
-
   // Browser notification permission
   const requestNotifPermission = async()=>{
     if(!("Notification" in window)) return;
@@ -1393,13 +1387,6 @@ function LedgerPage({ session }) {
     setEAmount(""); setENote(""); setEReminder(""); setEFile(null);
     loadEntries(selPerson.id);
     setTimeout(()=>{setEMsg(null);setView("person");},1000);
-  };
-
-  const settleEntry = async(entry)=>{
-    const ok=await confirm({icon:"✅",title:"Mark as Settled",message:`Mark ${fmt(entry.amount)} as fully settled?`,confirmLabel:"Settle",danger:false});
-    if(!ok) return;
-    await supabase.from("ledger_entries").update({settled:true}).eq("id",entry.id);
-    loadEntries(selPerson.id);
   };
 
   const deleteEntry = async(id)=>{
@@ -1764,7 +1751,6 @@ const INV_TYPES = {
 };
 
 function InvestmentsPage({ session }) {
-  const [tab, setTab] = useState("overview");
   const [investments, setInvestments] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [selInv, setSelInv] = useState(null);
@@ -1791,6 +1777,8 @@ function InvestmentsPage({ session }) {
   const [tRecurring, setTRecurring] = useState(false);
   const [tWithdrawal, setTWithdrawal] = useState(false);
   const [tMsg, setTMsg] = useState(null);
+  const [editingVal, setEditingVal] = useState(false);
+  const [newVal, setNewVal] = useState("");
 
   const load = useCallback(async()=>{
     const {data:inv} = await supabase.from("investments").select("*").eq("user_id",session.user.id).order("created_at",{ascending:false});
@@ -1845,7 +1833,7 @@ function InvestmentsPage({ session }) {
     if(!ok) return;
     await supabase.from("investment_txns").delete().eq("investment_id",id);
     await supabase.from("investments").delete().eq("id",id);
-    setSelInv(null); setTab("overview"); load();
+    setSelInv(null); load();
   };
 
   const saveTxn = async()=>{
@@ -1877,7 +1865,6 @@ function InvestmentsPage({ session }) {
   const totalInvested = active.reduce((s,i)=>s+i.amount,0);
   const totalCurrentValue = active.reduce((s,i)=>s+i.current_value,0);
   const totalGain = totalCurrentValue - totalInvested;
-  const byType = Object.fromEntries(Object.keys(INV_TYPES).map(t=>[t,active.filter(i=>i.type===t)]));
 
   const CARD = {background:"#0d1130",border:"1px solid rgba(255,255,255,.07)",borderRadius:12,padding:"14px 16px"};
   const SEC  = {background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.07)",borderRadius:14,padding:"18px 22px",marginBottom:14};
@@ -1921,8 +1908,6 @@ function InvestmentsPage({ session }) {
     const invTxns = transactions.filter(t=>t.investment_id===selInv.id);
     const totalContrib = invTxns.filter(t=>!t.is_withdrawal).reduce((s,t)=>s+t.amount,0);
     const totalWithdrawn = invTxns.filter(t=>t.is_withdrawal).reduce((s,t)=>s+t.amount,0);
-    const [editingVal, setEditingVal] = useState(false);
-    const [newVal, setNewVal] = useState(String(selInv.current_value||0));
 
     return (
       <div>
@@ -2099,7 +2084,7 @@ function InvestmentsPage({ session }) {
               const gain = inv.current_value - inv.amount;
               const isWithdrawn = inv.status==="withdrawn";
               return (
-                <div key={inv.id} onClick={()=>{setSelInv(inv);loadTxns(inv.id);}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 0",borderBottom:"1px solid rgba(255,255,255,.05)",cursor:"pointer",opacity:isWithdrawn?.6:1}}>
+                <div key={inv.id} onClick={()=>{setSelInv(inv);loadTxns(inv.id);setEditingVal(false);setNewVal(String(inv.current_value||0));}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 0",borderBottom:"1px solid rgba(255,255,255,.05)",cursor:"pointer",opacity:isWithdrawn?.6:1}}>
                   <div style={{minWidth:0,flex:1}}>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                       <span style={{fontSize:13,fontWeight:600,color:"#e8eaf6"}}>{inv.name}</span>
@@ -2158,6 +2143,7 @@ export default function App() {
     return ()=>subscription.unsubscribe();
   },[]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(()=>{ if(session){loadBudget();loadTransactions();loadProfile();} },[session]);
 
   const loadProfile = useCallback(async()=>{
