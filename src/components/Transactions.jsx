@@ -20,6 +20,35 @@ export default function Transactions({ transactions, onDeleted }) {
     onDeleted();
   };
 
+  // ── Export to CSV (opens in Excel) ──
+  const exportCSV = (rows, filename) => {
+    if (!rows.length) return;
+    const headers = ["Date", "Description", "Category", "Amount"];
+    const escape = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const csvRows = [
+      headers.join(","),
+      ...rows.map(t => [t.date, t.description, t.category, t.amount].map(escape).join(","))
+    ];
+    const csv = "\uFEFF" + csvRows.join("\r\n"); // BOM for Excel to detect UTF-8
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const exportMonth = () => {
+    const sorted = [...txns].sort((a, b) => a.date.localeCompare(b.date));
+    exportCSV(sorted, `Monefy_${MONTHS[m]}_${y}.csv`);
+  };
+
+  const exportAll = () => {
+    const sorted = [...transactions].sort((a, b) => a.date.localeCompare(b.date));
+    exportCSV(sorted, `Monefy_All_Transactions.csv`);
+  };
+
   return (
     <div>
       {modal}
@@ -32,6 +61,8 @@ export default function Transactions({ transactions, onDeleted }) {
           <select className="mf-sel" value={y} onChange={e => setY(+e.target.value)}>
             {YEARS.map(yr => <option key={yr} value={yr}>{yr}</option>)}
           </select>
+          <button className="mf-btn-g" onClick={exportMonth} disabled={txns.length === 0}>📥 Export Month</button>
+          <button className="mf-btn-g" onClick={exportAll} disabled={transactions.length === 0}>📥 Export All</button>
         </div>
       </div>
       <div className="mf-sec">
