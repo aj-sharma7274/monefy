@@ -298,20 +298,20 @@ export default function Ledger({ session }) {
       const doc = new jsPDF();
       const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
 
+      const pdfFmt = (n) => "Rs. " + Math.round(n).toLocaleString("en-IN");
+
       doc.setFontSize(16); doc.setTextColor(0, 150, 136);
-      doc.text("Monefy — Ledger Statement", 14, 18);
+      doc.text("Monefy - Ledger Statement", 14, 18);
       doc.setFontSize(11); doc.setTextColor(80, 80, 80);
       doc.text(`Person: ${selPerson.name}`, 14, 27);
       if (selPerson.phone) doc.text(`Phone: ${selPerson.phone}`, 14, 33);
       doc.text(`Generated: ${new Date().toLocaleDateString("en-IN")}`, 14, selPerson.phone ? 39 : 33);
 
-      const theyOwe = entries.filter(e => !e.settled && (e.type === "given" || e.type === "received_back")).reduce((s, e) => e.type === "given" ? s + e.amount : s - e.amount, 0);
-      const youOwe  = entries.filter(e => !e.settled && (e.type === "borrowed" || e.type === "returned")).reduce((s, e) => e.type === "borrowed" ? s + e.amount : s - e.amount, 0);
       const startY = selPerson.phone ? 46 : 40;
-      doc.setFontSize(11); doc.setTextColor(255, 77, 109);
-      doc.text(`They Owe You: ${fmt(Math.max(0, theyOwe))}`, 14, startY);
-      doc.setTextColor(0, 229, 204);
-      doc.text(`You Owe Them: ${fmt(Math.max(0, youOwe))}`, 90, startY);
+
+      const totalGiven    = sorted.filter(e => e.type === "given" || e.type === "returned").reduce((s, e) => s + e.amount, 0);
+      const totalReceived = sorted.filter(e => e.type === "received_back" || e.type === "borrowed").reduce((s, e) => s + e.amount, 0);
+      const diff = totalGiven - totalReceived;
 
       if (typeof doc.autoTable !== "function") {
         console.error("autoTable plugin not attached", window.jspdf);
@@ -319,19 +319,29 @@ export default function Ledger({ session }) {
       }
 
       doc.autoTable({
-        startY: startY + 8,
-        head: [["Date", "Type", "Amount", "Note", "Reminder", "Settled"]],
-        body: sorted.map(e => [
-          e.date,
-          ENTRY_META[e.type]?.label || e.type,
-          fmt(e.amount),
-          e.note || "-",
-          e.reminder_date || "-",
-          e.settled ? "Yes" : "No",
-        ]),
+        startY,
+        head: [["Date", "Type", "Amount", "Note", "Reminder"]],
+        body: [
+          ...sorted.map(e => [
+            e.date,
+            ENTRY_META[e.type]?.label || e.type,
+            pdfFmt(e.amount),
+            e.note || "-",
+            e.reminder_date || "-",
+          ]),
+          ["", "Total", pdfFmt(diff), `Given: ${pdfFmt(totalGiven)}  |  Received: ${pdfFmt(totalReceived)}`, ""],
+        ],
         headStyles: { fillColor: [0, 150, 136] },
+        footStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: "bold" },
+        didParseCell: (data) => {
+          if (data.row.index === sorted.length && data.section === "body") {
+            data.cell.styles.fontStyle = "bold";
+            data.cell.styles.fillColor = [240, 240, 240];
+          }
+        },
         styles: { fontSize: 9 },
       });
+
 
       doc.save(`Monefy_Ledger_${selPerson.name.replace(/\s+/g, "_")}.pdf`);
     };
