@@ -284,14 +284,16 @@ export default function Ledger({ session }) {
   // ── Export entries to PDF ──
   const exportPDF = () => {
     if (!entries.length) return;
-    const load = (src) => new Promise(res => {
-      if (document.querySelector(`script[src="${src}"]`)) { res(); return; }
-      const s = document.createElement("script"); s.src = src; s.onload = res; document.head.appendChild(s);
+    const load = (src) => new Promise((res, rej) => {
+      const existing = document.querySelector(`script[src="${src}"]`);
+      if (existing) { res(); return; }
+      const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s);
     });
-    Promise.all([
-      load("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"),
-      load("https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"),
-    ]).then(() => {
+
+    const run = async () => {
+      if (!window.jspdf) await load("https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js");
+      if (!window.jspdf?.jsPDF?.API?.autoTable) await load("https://unpkg.com/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js");
+
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF();
       const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
@@ -311,6 +313,11 @@ export default function Ledger({ session }) {
       doc.setTextColor(0, 229, 204);
       doc.text(`You Owe Them: ${fmt(Math.max(0, youOwe))}`, 90, startY);
 
+      if (typeof doc.autoTable !== "function") {
+        console.error("autoTable plugin not attached", window.jspdf);
+        return;
+      }
+
       doc.autoTable({
         startY: startY + 8,
         head: [["Date", "Type", "Amount", "Note", "Reminder", "Settled"]],
@@ -327,7 +334,9 @@ export default function Ledger({ session }) {
       });
 
       doc.save(`Monefy_Ledger_${selPerson.name.replace(/\s+/g, "_")}.pdf`);
-    });
+    };
+
+    run().catch(err => { console.error("PDF export failed:", err); alert("PDF export failed. Check console for details."); });
   };
 
   const exportEntries = () => {
