@@ -275,6 +275,33 @@ export default function Ledger({ session }) {
     loadEntries(selPerson.id);
   };
 
+  // ── Export entries to CSV ──
+  const exportEntries = () => {
+    if (!entries.length) return;
+    const headers = ["Date", "Type", "Amount", "Note", "Reminder Date", "Settled"];
+    const escape = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+    const rows = [
+      headers.join(","),
+      ...sorted.map(e => [
+        e.date,
+        ENTRY_META[e.type]?.label || e.type,
+        e.amount,
+        e.note || "",
+        e.reminder_date || "",
+        e.settled ? "Yes" : "No",
+      ].map(escape).join(","))
+    ];
+    const csv = "\uFEFF" + rows.join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `Monefy_Ledger_${selPerson.name.replace(/\s+/g, "_")}.csv`;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const CC = {
     card: { background: "#0d1130", border: "1px solid rgba(255,255,255,.07)", borderRadius: 12, padding: "16px 18px" },
     sec:  { background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 14, padding: "18px 22px", marginBottom: 16 },
@@ -416,8 +443,9 @@ export default function Ledger({ session }) {
               {selPerson.notes && <div style={{ fontSize: 12, color: "#9ba5c9", marginTop: 2 }}>{selPerson.notes}</div>}
             </div>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="mf-btn-p" onClick={() => setView("add_entry")}>+ Add Entry</button>
+            <button className="mf-btn-g" onClick={exportEntries} disabled={entries.length === 0}>📥 Export</button>
             <button className="mf-btn-d" onClick={() => deletePerson(selPerson.id)}>Remove</button>
           </div>
         </div>
