@@ -58,7 +58,7 @@ export default function Profile({ session, profile, onProfileUpdated }) {
     if (file.size > 2 * 1024 * 1024) { setAvatarMsg({ t: "err", m: "Max file size is 2MB" }); return; }
     setUploading(true);
     const ext  = file.name.split(".").pop();
-    const path = `avatars/${session.user.id}.${ext}`;
+    const path = `${session.user.id}/avatar.${ext}`;
     const { error: upErr } = await supabase.storage.from("avatars").upload(path, file, { upsert: true });
     if (upErr) { setAvatarMsg({ t: "err", m: "Upload failed. Check avatars bucket in Supabase Storage." }); setUploading(false); return; }
     const { data } = supabase.storage.from("avatars").getPublicUrl(path);
