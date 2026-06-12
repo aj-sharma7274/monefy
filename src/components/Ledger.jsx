@@ -253,7 +253,13 @@ export default function Ledger({ session }) {
       const ext  = eFile.name.split(".").pop();
       const path = `${session.user.id}/${Date.now()}.${ext}`;
       const { error: upErr } = await supabase.storage.from("ledger-attachments").upload(path, eFile, { upsert: true });
-      if (!upErr) { const { data } = supabase.storage.from("ledger-attachments").getPublicUrl(path); attachment_url = data.publicUrl; }
+      if (upErr) {
+        setEUploading(false);
+        setEMsg({ t: "err", m: `Attachment upload failed: ${upErr.message}` });
+        return;
+      }
+      const { data } = supabase.storage.from("ledger-attachments").getPublicUrl(path);
+      attachment_url = data.publicUrl;
     }
     const { error } = await supabase.from("ledger_entries").insert({
       user_id: session.user.id, person_id: selPerson.id,
@@ -275,7 +281,55 @@ export default function Ledger({ session }) {
     loadEntries(selPerson.id);
   };
 
-  // ── Export entries to CSV ──
+  // ── Export entries to PDF ──
+  const exportPDF = () => {
+    if (!entries.length) return;
+    const load = (src) => new Promise(res => {
+      if (document.querySelector(`script[src="${src}"]`)) { res(); return; }
+      const s = document.createElement("script"); s.src = src; s.onload = res; document.head.appendChild(s);
+    });
+    Promise.all([
+      load("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"),
+      load("https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"),
+    ]).then(() => {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+
+      doc.setFontSize(16); doc.setTextColor(0, 150, 136);
+      doc.text("Monefy — Ledger Statement", 14, 18);
+      doc.setFontSize(11); doc.setTextColor(80, 80, 80);
+      doc.text(`Person: ${selPerson.name}`, 14, 27);
+      if (selPerson.phone) doc.text(`Phone: ${selPerson.phone}`, 14, 33);
+      doc.text(`Generated: ${new Date().toLocaleDateString("en-IN")}`, 14, selPerson.phone ? 39 : 33);
+
+      const theyOwe = entries.filter(e => !e.settled && (e.type === "given" || e.type === "received_back")).reduce((s, e) => e.type === "given" ? s + e.amount : s - e.amount, 0);
+      const youOwe  = entries.filter(e => !e.settled && (e.type === "borrowed" || e.type === "returned")).reduce((s, e) => e.type === "borrowed" ? s + e.amount : s - e.amount, 0);
+      const startY = selPerson.phone ? 46 : 40;
+      doc.setFontSize(11); doc.setTextColor(255, 77, 109);
+      doc.text(`They Owe You: ${fmt(Math.max(0, theyOwe))}`, 14, startY);
+      doc.setTextColor(0, 229, 204);
+      doc.text(`You Owe Them: ${fmt(Math.max(0, youOwe))}`, 90, startY);
+
+      doc.autoTable({
+        startY: startY + 8,
+        head: [["Date", "Type", "Amount", "Note", "Reminder", "Settled"]],
+        body: sorted.map(e => [
+          e.date,
+          ENTRY_META[e.type]?.label || e.type,
+          fmt(e.amount),
+          e.note || "-",
+          e.reminder_date || "-",
+          e.settled ? "Yes" : "No",
+        ]),
+        headStyles: { fillColor: [0, 150, 136] },
+        styles: { fontSize: 9 },
+      });
+
+      doc.save(`Monefy_Ledger_${selPerson.name.replace(/\s+/g, "_")}.pdf`);
+    });
+  };
+
   const exportEntries = () => {
     if (!entries.length) return;
     const headers = ["Date", "Type", "Amount", "Note", "Reminder Date", "Settled"];
@@ -445,7 +499,8 @@ export default function Ledger({ session }) {
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="mf-btn-p" onClick={() => setView("add_entry")}>+ Add Entry</button>
-            <button className="mf-btn-g" onClick={exportEntries} disabled={entries.length === 0}>📥 Export</button>
+            <button className="mf-btn-g" onClick={exportEntries} disabled={entries.length === 0}>📥 Export CSV</button>
+            <button className="mf-btn-g" onClick={exportPDF} disabled={entries.length === 0}>📄 Export PDF</button>
             <button className="mf-btn-d" onClick={() => deletePerson(selPerson.id)}>Remove</button>
           </div>
         </div>
