@@ -23,7 +23,10 @@ function calcNet(entries) {
 // ── Self-contained Entry Row ──
 function EntryRow({ entry, onDelete, today }) {
   const meta      = ENTRY_META[entry.type] || ENTRY_META.given;
-  const isOverdue = entry.reminder_date && entry.reminder_date <= today && !entry.settled;
+  const isDueToday = entry.reminder_date === today && !entry.settled;
+  const isUpcoming = entry.reminder_date && entry.reminder_date > today && !entry.settled &&
+    (new Date(entry.reminder_date) - new Date(today)) / 86400000 <= 2;
+  const isPast = entry.reminder_date && entry.reminder_date < today && !entry.settled;
   const [lightbox, setLightbox] = useState(false);
 
   return (
@@ -54,8 +57,8 @@ function EntryRow({ entry, onDelete, today }) {
           {entry.note && <div style={{ fontSize: 12, color: "#9ba5c9", marginBottom: 3 }}>{entry.note}</div>}
           <div style={{ fontSize: 11, color: "#5a6490" }}>📅 {entry.date}</div>
           {entry.reminder_date && (
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, padding: "2px 7px", borderRadius: 99, background: isOverdue ? "rgba(255,77,109,.12)" : "rgba(255,184,48,.12)", color: isOverdue ? "#ff4d6d" : "#ffb830", marginTop: 4 }}>
-              ⏰ Reminder: {entry.reminder_date}{isOverdue && <strong> — OVERDUE</strong>}
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, padding: "2px 7px", borderRadius: 99, background: (isDueToday || isUpcoming) ? "rgba(255,184,48,.12)" : "rgba(255,255,255,.05)", color: (isDueToday || isUpcoming) ? "#ffb830" : "#5a6490", marginTop: 4 }}>
+              ⏰ Reminder: {entry.reminder_date}{isDueToday && <strong> — TODAY</strong>}{isUpcoming && <strong> — UPCOMING</strong>}{isPast && " (passed)"}
             </div>
           )}
           {entry.attachment_url && (
@@ -164,7 +167,7 @@ export default function Ledger({ session }) {
   const [people,        setPeople]       = useState([]);
   const [selPerson,     setSelPerson]    = useState(null);
   const [entries,       setEntries]      = useState([]);
-  const [overduePeople, setOverduePeople]= useState([]);
+  const [dueTodayPeople, setDueTodayPeople] = useState([]);
   const { confirm, modal } = useConfirm();
 
   // Person form
@@ -196,22 +199,35 @@ export default function Ledger({ session }) {
 
   useEffect(() => { loadPeople(); }, [loadPeople]);
 
-  // Check overdue reminders
+  // Check reminders — banner shows 2 days before through due date, notification only on exact due date
   useEffect(() => {
     if (!people.length) return;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().slice(0, 10);
+    const twoDaysOut = new Date(today);
+    twoDaysOut.setDate(twoDaysOut.getDate() + 2);
+    const twoDaysOutStr = twoDaysOut.toISOString().slice(0, 10);
+
     supabase.from("ledger_entries").select("*,ledger_people(name)")
-      .eq("user_id", session.user.id).eq("settled", false)
-      .lte("reminder_date", today).not("reminder_date", "is", null)
+      .eq("user_id", session.user.id)
+      .eq("settled", false)
+      .gte("reminder_date", todayStr)      // not in the past
+      .lte("reminder_date", twoDaysOutStr) // within next 2 days (inclusive of today)
+      .not("reminder_date", "is", null)
       .then(({ data }) => {
         if (data && data.length) {
-          setOverduePeople(data);
-          if (Notification.permission === "granted") {
-            data.forEach(e => new Notification("Monefy Reminder 💰", {
-              body: `${e.ledger_people?.name || "Someone"} — ${fmt(e.amount)} is due!`,
+          setDueTodayPeople(data);
+          // Browser notification only fires for entries due exactly today
+          const dueToday = data.filter(e => e.reminder_date === todayStr);
+          if (dueToday.length && Notification.permission === "granted") {
+            dueToday.forEach(e => new Notification("Monefy Reminder 💰", {
+              body: `${e.ledger_people?.name || "Someone"} — ${fmt(e.amount)} is due today!`,
               icon: "/favicon.ico"
             }));
           }
+        } else {
+          setDueTodayPeople([]);
         }
       });
   }, [people, session]);
@@ -390,15 +406,26 @@ export default function Ledger({ session }) {
         <button className="mf-btn-p" onClick={() => setView("add_person")}>+ Add Person</button>
       </div>
 
-      {overduePeople.length > 0 && (
-        <div style={{ background: "rgba(255,184,48,.1)", border: "1px solid rgba(255,184,48,.3)", borderRadius: 10, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 18 }}>⏰</span>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "#ffb830" }}>Payment Reminders Due</div>
-            <div style={{ fontSize: 12, color: "#9ba5c9", marginTop: 2 }}>{overduePeople.length} {overduePeople.length === 1 ? "entry" : "entries"} past reminder date</div>
+      {dueTodayPeople.length > 0 && (() => {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const dueToday = dueTodayPeople.filter(e => e.reminder_date === todayStr);
+        const upcoming = dueTodayPeople.filter(e => e.reminder_date !== todayStr);
+        return (
+          <div style={{ background: "rgba(255,184,48,.1)", border: "1px solid rgba(255,184,48,.3)", borderRadius: 10, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 18 }}>⏰</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#ffb830" }}>
+                {dueToday.length > 0 ? "Payment Reminder Today" : "Upcoming Payment Reminder"}
+              </div>
+              <div style={{ fontSize: 12, color: "#9ba5c9", marginTop: 2 }}>
+                {dueToday.length > 0 && `${dueToday.length} ${dueToday.length === 1 ? "entry is" : "entries are"} due today`}
+                {dueToday.length > 0 && upcoming.length > 0 && " · "}
+                {upcoming.length > 0 && `${upcoming.length} ${upcoming.length === 1 ? "entry is" : "entries are"} due within 2 days`}
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       <NetWorthSummary session={session} people={people} />
 
@@ -409,7 +436,7 @@ export default function Ledger({ session }) {
             <div style={{ fontSize: 13, color: "#5a6490", marginBottom: 20 }}>Track money given or received with friends and family</div>
             <button className="mf-btn-p" onClick={() => setView("add_person")}>Add First Person</button>
           </div>
-        : people.map(p => <PersonCard key={p.id} person={p} onClick={() => openPerson(p)} overdue={overduePeople.some(e => e.person_id === p.id)} />)
+        : people.map(p => <PersonCard key={p.id} person={p} onClick={() => openPerson(p)} overdue={dueTodayPeople.some(e => e.person_id === p.id)} />)
       }
     </div>
   );
