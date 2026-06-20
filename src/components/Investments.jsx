@@ -104,7 +104,8 @@ export default function Investments({ session }) {
     const ok = await confirm({ icon: "✅", title: "Mark as Withdrawn", message: `Mark "${inv.name}" as withdrawn? It won't count in active portfolio.`, confirmLabel: "Withdraw", danger: false });
     if (!ok) return;
     await supabase.from("investments").update({ status: "withdrawn" }).eq("id", inv.id);
-    setSelInv(p => ({ ...p, status: "withdrawn" })); load();
+    setSelInv(p => (p && p.id === inv.id) ? { ...p, status: "withdrawn" } : p);
+    load();
   };
 
   const deleteInvestment = async (id) => {

@@ -13,7 +13,7 @@ export const PIE_COLORS = [
   "#60a5fa","#f97316","#34d399","#fb7185","#818cf8","#fbbf24","#4ade80"
 ];
 
-export const fmt  = (n) => "₹" + Math.round(n).toLocaleString("en-IN");
+export const fmt  = (n) => "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN");
 export const pct  = (a, b) => b === 0 ? 0 : Math.min(Math.round((a / b) * 100), 999);
 
 export const timeAgo = (ts) => {
