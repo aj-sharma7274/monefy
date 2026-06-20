@@ -15,6 +15,19 @@ const INV_TYPES = {
 const CARD = { background: "#0d1130", border: "1px solid rgba(255,255,255,.07)", borderRadius: 12, padding: "14px 16px" };
 const SEC  = { background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 14, padding: "18px 22px", marginBottom: 14 };
 
+// FD current value: simple daily-accrued interest from start_date to today (capped at maturity_date)
+function calcFDCurrentValue(inv) {
+  if (!inv.start_date || !inv.interest_rate) return inv.amount;
+  const start = new Date(inv.start_date);
+  const end   = inv.maturity_date ? new Date(inv.maturity_date) : null;
+  const today = new Date();
+  const asOf  = end && today > end ? end : today;
+  const daysElapsed = Math.max(0, Math.floor((asOf - start) / 86400000));
+  const dailyRate = (inv.interest_rate / 100) / 365;
+  const value = inv.amount * (1 + dailyRate * daysElapsed);
+  return Math.round(value);
+}
+
 export default function Investments({ session }) {
   const [investments,  setInvestments]  = useState([]);
   const [transactions, setTransactions] = useState([]);
@@ -36,6 +49,7 @@ export default function Investments({ session }) {
   const [fNotes,        setFNotes]        = useState("");
   const [fCurrentValue, setFCurrentValue] = useState("");
   const [fFundName,     setFFundName]     = useState("");
+  const [fInterestRate, setFInterestRate] = useState("");
 
   // Transaction form
   const [tDate,       setTDate]       = useState(new Date().toISOString().slice(0, 10));
@@ -59,16 +73,18 @@ export default function Investments({ session }) {
     if (data) setTransactions(data);
   }, []);
 
-  const resetForm = () => { setFName(""); setFAmount(""); setFStartDate(""); setFMatDate(""); setFMatAmount(""); setFNotes(""); setFCurrentValue(""); setFFundName(""); };
+  const resetForm = () => { setFName(""); setFAmount(""); setFStartDate(""); setFMatDate(""); setFMatAmount(""); setFNotes(""); setFCurrentValue(""); setFFundName(""); setFInterestRate(""); };
 
   const saveInvestment = async () => {
     if (!fName.trim() || !fStartDate) { setMsg({ t: "err", m: "Name and start date are required" }); return; }
+    if (addingType === "fd" && !fMatDate) { setMsg({ t: "err", m: "Maturity date is required for Fixed Deposits" }); return; }
     setSaving(true);
     const { error } = await supabase.from("investments").insert({
       user_id: session.user.id, type: addingType, name: fName.trim(),
       amount: parseFloat(fAmount) || 0, start_date: fStartDate,
       maturity_date: fMatDate || null, maturity_amount: parseFloat(fMatAmount) || 0,
       current_value: parseFloat(fCurrentValue) || parseFloat(fAmount) || 0,
+      interest_rate: parseFloat(fInterestRate) || null,
       fund_name: fFundName.trim() || null, notes: fNotes.trim() || null, status: "active",
     });
     setSaving(false);
@@ -124,8 +140,9 @@ export default function Investments({ session }) {
 
   const active        = investments.filter(i => i.status === "active");
   const withdrawn     = investments.filter(i => i.status === "withdrawn");
+  const getCurrentVal = (i) => i.type === "fd" ? calcFDCurrentValue(i) : i.current_value;
   const totalInvested = active.reduce((s, i) => s + i.amount, 0);
-  const totalCurrentV = active.reduce((s, i) => s + i.current_value, 0);
+  const totalCurrentV = active.reduce((s, i) => s + getCurrentVal(i), 0);
   const totalGain     = totalCurrentV - totalInvested;
 
   // ── Add Investment Form ──
@@ -161,11 +178,17 @@ export default function Investments({ session }) {
               )}
               {(addingType === "fd" || addingType === "rd") && (
                 <div className="mf-form-group">
-                  <label className="mf-form-label">Maturity Amount (₹)</label>
-                  <input type="number" className="mf-inp" value={fMatAmount} onChange={e => setFMatAmount(e.target.value)} placeholder="0" />
+                  <label className="mf-form-label">Interest Rate (% p.a.)</label>
+                  <input type="number" step="0.01" className="mf-inp" value={fInterestRate} onChange={e => setFInterestRate(e.target.value)} placeholder="e.g. 7.25" />
                 </div>
               )}
             </div>
+            {(addingType === "fd" || addingType === "rd") && (
+              <div className="mf-form-group">
+                <label className="mf-form-label">Maturity Amount (₹) <span style={{ color: "#5a6490", fontWeight: 400 }}>(optional — for reference)</span></label>
+                <input type="number" className="mf-inp" value={fMatAmount} onChange={e => setFMatAmount(e.target.value)} placeholder="0" />
+              </div>
+            )}
             <div className="mf-form-grid">
               <div className="mf-form-group">
                 <label className="mf-form-label">Start Date *</label>
@@ -173,11 +196,16 @@ export default function Investments({ session }) {
               </div>
               {addingType !== "stocks" && addingType !== "mutualfund" && (
                 <div className="mf-form-group">
-                  <label className="mf-form-label">Maturity / End Date</label>
+                  <label className="mf-form-label">Maturity / End Date {addingType === "fd" && "*"}</label>
                   <input type="date" className="mf-inp" value={fMatDate} onChange={e => setFMatDate(e.target.value)} />
                 </div>
               )}
             </div>
+            {addingType === "fd" && fInterestRate && (
+              <div style={{ fontSize: 11, color: "#5a6490", background: "rgba(0,229,204,.06)", padding: "8px 12px", borderRadius: 8 }}>
+                💡 Current value will be calculated automatically each day based on your interest rate, until maturity.
+              </div>
+            )}
             <div className="mf-form-group">
               <label className="mf-form-label">Notes</label>
               <textarea className="mf-textarea" value={fNotes} onChange={e => setFNotes(e.target.value)} placeholder="Any notes…" style={{ minHeight: 60 }} />
@@ -196,6 +224,8 @@ export default function Investments({ session }) {
   // ── Individual Investment Detail ──
   if (selInv) {
     const meta         = INV_TYPES[selInv.type] || INV_TYPES.fd;
+    const isFD          = selInv.type === "fd";
+    const fdCurrentVal  = isFD ? calcFDCurrentValue(selInv) : null;
     const invTxns      = transactions.filter(t => t.investment_id === selInv.id);
     const totalContrib = invTxns.filter(t => !t.is_withdrawal).reduce((s, t) => s + t.amount, 0);
     const totalWithdr  = invTxns.filter(t => t.is_withdrawal).reduce((s, t) => s + t.amount, 0);
@@ -211,12 +241,12 @@ export default function Investments({ session }) {
             <div style={{ width: 44, height: 44, borderRadius: 10, background: meta.color + "22", border: `1px solid ${meta.color}44`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>{meta.icon}</div>
             <div>
               <div style={{ fontSize: 16, fontWeight: 700, color: "#e8eaf6" }}>{selInv.name}</div>
-              <div style={{ fontSize: 12, color: meta.color, fontWeight: 500 }}>{meta.label}{selInv.fund_name && ` · ${selInv.fund_name}`}</div>
+              <div style={{ fontSize: 12, color: meta.color, fontWeight: 500 }}>{meta.label}{selInv.fund_name && ` · ${selInv.fund_name}`}{isFD && selInv.interest_rate && ` · ${selInv.interest_rate}% p.a.`}</div>
               {selInv.status === "withdrawn" && <span style={{ fontSize: 10, background: "rgba(255,255,255,.07)", color: "#5a6490", padding: "1px 6px", borderRadius: 99 }}>Withdrawn</span>}
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {selInv.status === "active" && <button className="mf-btn-p" onClick={() => setAddingTxn(t => !t)}>+ Add Entry</button>}
+            {!isFD && selInv.status === "active" && <button className="mf-btn-p" onClick={() => setAddingTxn(t => !t)}>+ Add Entry</button>}
             {selInv.status === "active" && (
               <button onClick={() => markWithdrawn(selInv)} style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid rgba(0,214,143,.3)", background: "rgba(0,214,143,.08)", color: "#00d68f", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>✓ Withdrawn</button>
             )}
@@ -230,6 +260,13 @@ export default function Investments({ session }) {
             <div style={{ fontSize: 10, color: "#5a6490", marginBottom: 5 }}>Invested</div>
             <div style={{ fontSize: 18, fontWeight: 700, color: "#e8eaf6" }}>{fmt(selInv.amount)}</div>
           </div>
+          {isFD && selInv.interest_rate && (
+            <div style={{ ...CARD, textAlign: "center" }}>
+              <div style={{ fontSize: 10, color: "#5a6490", marginBottom: 5 }}>Current Value (est.)</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: fdCurrentVal >= selInv.amount ? "#00d68f" : "#ff4d8d" }}>{fmt(fdCurrentVal)}</div>
+              <div style={{ fontSize: 10, color: "#5a6490", marginTop: 2 }}>accrued daily</div>
+            </div>
+          )}
           {(selInv.type === "mutualfund" || selInv.type === "stocks") && (
             <div style={{ ...CARD, textAlign: "center" }}>
               <div style={{ fontSize: 10, color: "#5a6490", marginBottom: 5 }}>Current Value</div>
@@ -387,26 +424,41 @@ export default function Investments({ session }) {
               <span style={{ fontSize: 11, color: "#5a6490", marginLeft: "auto" }}>{list.filter(i => i.status === "active").length} active</span>
             </div>
             {list.map(inv => {
-              const gain       = inv.current_value - inv.amount;
-              const isWithdrawn= inv.status === "withdrawn";
+              const isFD        = inv.type === "fd";
+              const currentVal  = isFD ? calcFDCurrentValue(inv) : inv.current_value;
+              const gain        = currentVal - inv.amount;
+              const isWithdrawn = inv.status === "withdrawn";
               return (
-                <div key={inv.id} onClick={() => { setSelInv(inv); loadTxns(inv.id); setEditingVal(false); setNewVal(String(inv.current_value || 0)); }}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 0", borderBottom: "1px solid rgba(255,255,255,.05)", cursor: "pointer", opacity: isWithdrawn ? 0.6 : 1 }}>
+                <div key={inv.id}
+                  onClick={() => { if (isFD) return; setSelInv(inv); loadTxns(inv.id); setEditingVal(false); setNewVal(String(inv.current_value || 0)); }}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 0", borderBottom: "1px solid rgba(255,255,255,.05)", cursor: isFD ? "default" : "pointer", opacity: isWithdrawn ? 0.6 : 1, gap: 10 }}>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <span style={{ fontSize: 13, fontWeight: 600, color: "#e8eaf6" }}>{inv.name}</span>
                       {inv.fund_name && <span style={{ fontSize: 11, color: "#5a6490", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{inv.fund_name}</span>}
                       {isWithdrawn && <span style={{ fontSize: 10, background: "rgba(255,255,255,.06)", color: "#5a6490", padding: "1px 5px", borderRadius: 99 }}>Withdrawn</span>}
+                      {isFD && inv.interest_rate && <span style={{ fontSize: 10, background: "rgba(0,229,204,.1)", color: "#00e5cc", padding: "1px 6px", borderRadius: 99 }}>{inv.interest_rate}% p.a.</span>}
                     </div>
                     <div style={{ fontSize: 11, color: "#5a6490", marginTop: 2 }}>Started {inv.start_date}{inv.maturity_date && ` · Matures ${inv.maturity_date}`}</div>
                   </div>
-                  <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, color: "#e8eaf6" }}>{fmt(inv.amount)}</div>
-                    {(type === "mutualfund" || type === "stocks") && inv.current_value > 0 && (
+                    {isFD && inv.interest_rate ? (
+                      <div style={{ fontSize: 11, color: gain >= 0 ? "#00d68f" : "#ff4d6d", marginTop: 1 }}>{gain >= 0 ? "+" : ""}{fmt(gain)} now</div>
+                    ) : (type === "mutualfund" || type === "stocks") && inv.current_value > 0 && (
                       <div style={{ fontSize: 11, color: gain >= 0 ? "#00d68f" : "#ff4d6d", marginTop: 1 }}>{gain >= 0 ? "+" : ""}{fmt(gain)}</div>
                     )}
                     {inv.maturity_amount > 0 && <div style={{ fontSize: 11, color: "#00e5cc", marginTop: 1 }}>→ {fmt(inv.maturity_amount)}</div>}
                   </div>
+                  {/* FD inline actions — no need to open detail page */}
+                  {isFD && (
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                      {!isWithdrawn && (
+                        <button onClick={() => markWithdrawn(inv)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(0,214,143,.3)", background: "rgba(0,214,143,.08)", color: "#00d68f", cursor: "pointer", fontSize: 11, fontWeight: 500, whiteSpace: "nowrap" }}>✓ Withdraw</button>
+                      )}
+                      <button className="mf-btn-d" style={{ fontSize: 11, padding: "6px 10px" }} onClick={() => deleteInvestment(inv.id)}>🗑</button>
+                    </div>
+                  )}
                 </div>
               );
             })}
