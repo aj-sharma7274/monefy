@@ -238,16 +238,33 @@ export default function Trips({ session }) {
     loadDetail(selTrip);
   };
 
-  // ── Computed split ──
+  // ── Computed split — handles all 3 cases ──
   const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
   const totalContrib  = members.reduce((s, m) => s + m.contribution, 0);
   const perHead       = members.length ? totalExpenses / members.length : 0;
+  const hasContrib    = totalContrib > 0;
 
   const splitData = members.map(m => {
-    const paid    = expenses.filter(e => e.paid_by === m.name).reduce((s, e) => s + e.amount, 0);
-    const share   = splitMethod === "equal" ? perHead : (totalContrib ? (m.contribution / totalContrib) * totalExpenses : perHead);
-    const balance = m.contribution + paid - share;
-    return { ...m, paid, share, balance };
+    // Amount paid directly by this member (from expense "paid_by" field)
+    const paidDirect = expenses
+      .filter(e => e.paid_by === m.name)
+      .reduce((s, e) => s + e.amount, 0);
+
+    // Each person's equal share of total expenses
+    const share = perHead;
+
+    let balance = 0;
+    if (hasContrib) {
+      // Case 1 & 2: contribution pool exists
+      // Balance = what they put in (contribution + what they paid directly) - their share
+      balance = (m.contribution + paidDirect) - share;
+    } else {
+      // Case 3: no contributions at all — only "paid_by" matters
+      // Balance = what they paid for others - their own share
+      balance = paidDirect - share;
+    }
+
+    return { ...m, paidDirect, share, balance };
   });
 
   // ────────────────────────────────────────────────────────
