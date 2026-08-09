@@ -222,7 +222,7 @@ export default function Trips({ session }) {
   };
 
   const saveExpense = async () => {
-    if (!eTitle.trim() || !eAmount || !eDate) { setEMsg({ t: "err", m: "Title, amount and date are required" }); return; }
+    if (!eTitle.trim() || !eAmount || !eDate || !ePaidBy) { setEMsg({ t: "err", m: "Title, amount, date and paid by are required" }); return; }
     setSaving(true);
     const { error } = await supabase.from("trip_expenses").insert({
       trip_id: selTrip.id, title: eTitle.trim(), amount: parseFloat(eAmount),
