@@ -19,7 +19,7 @@ const CARD = { background: "#0d1130", border: "1px solid rgba(255,255,255,.07)",
 const SEC  = { background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 14, padding: "18px 22px", marginBottom: 14 };
 
 // ── PDF Export ──
-function exportTripPDF(trip, members, expenses, splitMethod) {
+function exportTripPDF(trip, members, expenses) {
   const load = (src) => new Promise((res, rej) => {
     if (document.querySelector(`script[src="${src}"]`)) { res(); return; }
     const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s);
@@ -82,15 +82,22 @@ function exportTripPDF(trip, members, expenses, splitMethod) {
     // Split calculation
     const perHead = totalExpenses / (members.length || 1);
     const splitRows = members.map(m => {
-      const paid    = expenses.filter(e => e.paid_by === m.name).reduce((s, e) => s + e.amount, 0);
-      const share   = splitMethod === "equal" ? perHead : (m.contribution / (totalContrib || 1)) * totalExpenses;
-      const balance = m.contribution + paid - share;
-      return [m.name, pFmt(m.contribution), pFmt(paid), pFmt(Math.round(share)), balance >= 0 ? `+${pFmt(balance)}` : pFmt(balance), balance >= 0 ? "Gets back" : "Owes more"];
+      const paidDirect = expenses.filter(e => e.paid_by === m.name).reduce((s, e) => s + e.amount, 0);
+      const share      = perHead;
+      const balance    = m.contribution - share;
+      return [
+        m.name,
+        pFmt(m.contribution),
+        pFmt(paidDirect) + " (info)",
+        pFmt(Math.round(share)),
+        balance >= 0 ? `+${pFmt(Math.abs(Math.round(balance)))}` : `-${pFmt(Math.abs(Math.round(balance)))}`,
+        balance > 0 ? "Gets back" : balance < 0 ? "Owes more" : "Settled",
+      ];
     });
 
     doc.autoTable({
       startY: y,
-      head: [["Member", "Contributed", "Paid For", `Share (${splitMethod === "equal" ? "Equal" : "Proportional"})`, "Balance", "Status"]],
+      head: [["Member", "Contributed", "Paid For (info)", "Equal Share", "Balance", "Status"]],
       body: splitRows,
       headStyles: { fillColor: [80, 60, 180] },
       styles: { fontSize: 9 },
@@ -119,7 +126,6 @@ export default function Trips({ session }) {
   const [tab,      setTab]      = useState("overview"); // overview | expenses | split
   const [saving,   setSaving]   = useState(false);
   const [msg,      setMsg]      = useState(null);
-  const [splitMethod, setSplitMethod] = useState("equal");
   const { confirm, modal } = useConfirm();
 
   // Trip form
@@ -238,32 +244,20 @@ export default function Trips({ session }) {
     loadDetail(selTrip);
   };
 
-  // ── Computed split — handles all 3 cases ──
+  // ── Computed split ──
+  // Contribution = advance collected upfront
+  // Paid By = informational only (who handled the cash from pool)
+  // Balance = Contribution − Equal Share
   const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
   const totalContrib  = members.reduce((s, m) => s + m.contribution, 0);
   const perHead       = members.length ? totalExpenses / members.length : 0;
-  const hasContrib    = totalContrib > 0;
 
   const splitData = members.map(m => {
-    // Amount paid directly by this member (from expense "paid_by" field)
+    const share      = perHead;
+    const balance    = m.contribution - share; // purely contribution vs share
     const paidDirect = expenses
       .filter(e => e.paid_by === m.name)
       .reduce((s, e) => s + e.amount, 0);
-
-    // Each person's equal share of total expenses
-    const share = perHead;
-
-    let balance = 0;
-    if (hasContrib) {
-      // Case 1 & 2: contribution pool exists
-      // Balance = what they put in (contribution + what they paid directly) - their share
-      balance = (m.contribution + paidDirect) - share;
-    } else {
-      // Case 3: no contributions at all — only "paid_by" matters
-      // Balance = what they paid for others - their own share
-      balance = paidDirect - share;
-    }
-
     return { ...m, paidDirect, share, balance };
   });
 
@@ -529,28 +523,40 @@ export default function Trips({ session }) {
         {/* ── Split Tab ── */}
         {tab === "split" && (
           <div>
-            {/* Split method selector + PDF export */}
+            {/* Summary + PDF export */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
-              <div style={{ display: "flex", gap: 8 }}>
-                {[["equal", "⚖️ Equal Split"], ["proportional", "📊 Proportional"]].map(([val, label]) => (
-                  <button key={val} onClick={() => setSplitMethod(val)} style={{ padding: "7px 14px", borderRadius: 8, border: `1px solid ${splitMethod === val ? "#00e5cc" : "rgba(255,255,255,.1)"}`, background: splitMethod === val ? "rgba(0,229,204,.1)" : "transparent", color: splitMethod === val ? "#00e5cc" : "#9ba5c9", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
-                    {label}
-                  </button>
-                ))}
+              <div style={{ fontSize: 13, color: "#9ba5c9" }}>
+                Equal split · <strong style={{ color: "#e8eaf6" }}>{fmt(Math.round(perHead))}</strong> per person · {members.length} members
               </div>
-              <button className="mf-btn-g" onClick={() => exportTripPDF(selTrip, members, expenses, splitMethod)}>📄 Export PDF</button>
+              <button className="mf-btn-g" onClick={() => exportTripPDF(selTrip, members, expenses)}>📄 Export PDF</button>
+            </div>
+
+            {/* Overall summary */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
+              <div style={{ ...CARD, textAlign: "center" }}>
+                <div style={{ fontSize: 10, color: "#5a6490", textTransform: "uppercase", letterSpacing: ".8px", marginBottom: 6 }}>Total Collected</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: "#00e5cc" }}>{fmt(totalContrib)}</div>
+              </div>
+              <div style={{ ...CARD, textAlign: "center" }}>
+                <div style={{ fontSize: 10, color: "#5a6490", textTransform: "uppercase", letterSpacing: ".8px", marginBottom: 6 }}>Total Spent</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: "#ff4d8d" }}>{fmt(totalExpenses)}</div>
+              </div>
+              <div style={{ ...CARD, textAlign: "center" }}>
+                <div style={{ fontSize: 10, color: "#5a6490", textTransform: "uppercase", letterSpacing: ".8px", marginBottom: 6 }}>Pool Balance</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: totalContrib - totalExpenses >= 0 ? "#00d68f" : "#ff4d6d" }}>
+                  {totalContrib - totalExpenses >= 0 ? "+" : ""}{fmt(totalContrib - totalExpenses)}
+                </div>
+              </div>
             </div>
 
             {members.length === 0
               ? <div style={{ ...CARD, textAlign: "center", padding: "32px 20px", color: "#5a6490" }}>Add members first to calculate the split.</div>
               : (
                 <div style={SEC}>
-                  <div className="mf-sec-title">
-                    {splitMethod === "equal" ? `Equal split — ${fmt(Math.round(perHead))} per person` : "Proportional to contribution"}
-                  </div>
+                  <div className="mf-sec-title">Per Member Settlement</div>
                   {splitData.map(m => (
                     <div key={m.id} style={{ padding: "14px 0", borderBottom: "1px solid rgba(255,255,255,.05)" }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(0,229,204,.1)", border: "1px solid rgba(0,229,204,.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: "#00e5cc", flexShrink: 0 }}>
                             {m.name[0].toUpperCase()}
@@ -558,23 +564,24 @@ export default function Trips({ session }) {
                           <span style={{ fontSize: 14, fontWeight: 600, color: "#e8eaf6" }}>{m.name}</span>
                         </div>
                         <div style={{ textAlign: "right" }}>
-                          <div style={{ fontSize: 16, fontWeight: 700, color: m.balance >= 0 ? "#00d68f" : "#ff4d6d" }}>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: m.balance >= 0 ? "#00d68f" : "#ff4d6d" }}>
                             {m.balance >= 0 ? "+" : ""}{fmt(Math.abs(Math.round(m.balance)))}
                           </div>
-                          <div style={{ fontSize: 10, color: m.balance >= 0 ? "#00d68f" : "#ff4d6d", marginTop: 2 }}>
-                            {m.balance >= 0 ? "gets back" : "needs to pay more"}
+                          <div style={{ fontSize: 11, color: m.balance >= 0 ? "#00d68f" : "#ff4d6d", marginTop: 2 }}>
+                            {m.balance > 0 ? "gets back" : m.balance < 0 ? "needs to pay" : "settled ✓"}
                           </div>
                         </div>
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                         {[
-                          { label: "Contributed", val: fmt(m.contribution), color: "#9ba5c9" },
-                          { label: "Paid for group", val: fmt(m.paid), color: "#9ba5c9" },
-                          { label: "Share of expenses", val: fmt(Math.round(m.share)), color: "#9ba5c9" },
+                          { label: "Contributed", val: fmt(m.contribution), color: "#00e5cc" },
+                          { label: "Equal Share", val: fmt(Math.round(m.share)), color: "#ff4d8d" },
+                          { label: "Paid for Group", val: fmt(m.paidDirect), color: "#9ba5c9", note: "informational" },
                         ].map((s, i) => (
                           <div key={i} style={{ background: "rgba(255,255,255,.03)", borderRadius: 8, padding: "8px 10px", textAlign: "center" }}>
                             <div style={{ fontSize: 9, color: "#5a6490", textTransform: "uppercase", letterSpacing: ".6px", marginBottom: 4 }}>{s.label}</div>
                             <div style={{ fontSize: 13, fontWeight: 600, color: s.color }}>{s.val}</div>
+                            {s.note && <div style={{ fontSize: 9, color: "#5a6490", marginTop: 2 }}>({s.note})</div>}
                           </div>
                         ))}
                       </div>
