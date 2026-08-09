@@ -19,6 +19,7 @@ const Investments = lazy(() => import("./components/Investments"));
 const Ledger      = lazy(() => import("./components/Ledger"));
 const Feedback    = lazy(() => import("./components/Feedback"));
 const Profile     = lazy(() => import("./components/Profile"));
+const Trips       = lazy(() => import("./components/Trips"));
 
 const ALL_NAV = [
   { id: "dashboard",    icon: "📊", label: "Dashboard",    feature: "dashboard"    },
@@ -27,6 +28,7 @@ const ALL_NAV = [
   { id: "budget",       icon: "🎯", label: "Budget",        feature: "budget"       },
   { id: "investments",  icon: "📈", label: "Invest",        feature: "investments"  },
   { id: "ledger",       icon: "🤝", label: "Ledger",        feature: "ledger"       },
+  { id: "trips",        icon: "✈️", label: "Trips",         feature: "trips"        },
   { id: "feedback",     icon: "💬", label: "Feedback",      feature: "feedback"     },
   { id: "profile",      icon: "👤", label: "Profile",       feature: "profile"      },
 ];
@@ -169,6 +171,7 @@ export default function App() {
           {page === "budget"       && <Budget       budget={budget} onSaved={loadBudget} />}
           {page === "investments"  && <Investments  session={session} />}
           {page === "ledger"       && <Ledger       session={session} />}
+          {page === "trips"        && <Trips        session={session} />}
           {page === "feedback"     && <Feedback     session={session} profile={profile} />}
           {page === "profile"      && <Profile      session={session} profile={profile} onProfileUpdated={loadProfile} />}
         </Suspense>
