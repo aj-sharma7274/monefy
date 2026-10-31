@@ -54,6 +54,7 @@ function EntryRow({ entry, onDelete, today }) {
     daysBetween(today, entry.reminder_date) <= 2;
   const isPast = entry.reminder_date && entry.reminder_date < today && !entry.settled;
   const [lightbox, setLightbox] = useState(false);
+  const isPdf = /\.pdf(\?|#|$)/i.test(entry.attachment_url || ""); // PDFs cannot be shown in an <img>
 
   return (
     <>
@@ -89,8 +90,14 @@ function EntryRow({ entry, onDelete, today }) {
           )}
           {entry.attachment_url && (
             <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <img src={entry.attachment_url} alt="thumb" style={{ width: 48, height: 48, borderRadius: 7, objectFit: "cover", border: "1px solid rgba(255,255,255,.12)", cursor: "pointer", flexShrink: 0 }} onClick={() => setLightbox(true)} />
-              <button onClick={() => setLightbox(true)} style={{ padding: "5px 12px", borderRadius: 7, border: "1px solid rgba(0,229,204,.3)", background: "rgba(0,229,204,.08)", color: "#00e5cc", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>🔍 View Attachment</button>
+              {isPdf ? (
+                <a href={entry.attachment_url} target="_blank" rel="noreferrer" style={{ padding: "5px 12px", borderRadius: 7, border: "1px solid rgba(0,229,204,.3)", background: "rgba(0,229,204,.08)", color: "#00e5cc", textDecoration: "none", fontSize: 11, fontWeight: 600 }}>📄 View PDF</a>
+              ) : (
+                <>
+                <img src={entry.attachment_url} alt="thumb" style={{ width: 48, height: 48, borderRadius: 7, objectFit: "cover", border: "1px solid rgba(255,255,255,.12)", cursor: "pointer", flexShrink: 0 }} onClick={() => setLightbox(true)} />
+                <button onClick={() => setLightbox(true)} style={{ padding: "5px 12px", borderRadius: 7, border: "1px solid rgba(0,229,204,.3)", background: "rgba(0,229,204,.08)", color: "#00e5cc", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>🔍 View Attachment</button>
+                </>
+              )}
             </div>
           )}
         </div>
