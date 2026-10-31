@@ -81,6 +81,41 @@ function notifyDueToday(entries) {
   } catch (err) { /* never let a notification problem break the Ledger page */ }
 }
 
+// Reminders only matter while the person still has a balance. A person at ₹0 already shows
+// "Settled ✓", so their old reminder dates are ignored. If anything about the balance check
+// goes wrong, every reminder is kept: a needless reminder is better than a missed one.
+function withOpenBalance(reminders, balanceEntries) {
+  const byPerson = {};
+  balanceEntries.forEach(e => {
+    if (!byPerson[e.person_id]) byPerson[e.person_id] = [];
+    byPerson[e.person_id].push(e);
+  });
+  return reminders.filter(r => {
+    const list = byPerson[r.person_id];
+    if (!list) return true;
+    return Math.abs(calcNet(list)) >= 0.005;
+  });
+}
+
+// Entries with a reminder date from `fromStr` to `toStr`, minus people who are already settled up.
+async function fetchReminders(userId, fromStr, toStr) {
+  const { data } = await supabase.from("ledger_entries").select("*,ledger_people(name)")
+    .eq("user_id", userId)
+    .eq("settled", false)
+    .gte("reminder_date", fromStr)
+    .lte("reminder_date", toStr)
+    .not("reminder_date", "is", null);
+  if (!data || !data.length) return [];
+  try {
+    const ids = [...new Set(data.map(e => e.person_id))];
+    const { data: all } = await supabase.from("ledger_entries").select("person_id,type,amount,settled")
+      .eq("user_id", userId).in("person_id", ids);
+    return all ? withOpenBalance(data, all) : data;
+  } catch (err) {
+    return data;
+  }
+}
+
 // ── Self-contained Entry Row ──
 function EntryRow({ entry, onDelete, today }) {
   const meta      = ENTRY_META[entry.type] || ENTRY_META.given;
@@ -266,22 +301,12 @@ export default function Ledger({ session }) {
     const todayStr = todayISO();
     const twoDaysOutStr = addDaysISO(todayStr, 2);
 
-    supabase.from("ledger_entries").select("*,ledger_people(name)")
-      .eq("user_id", session.user.id)
-      .eq("settled", false)
-      .gte("reminder_date", todayStr)      // not in the past
-      .lte("reminder_date", twoDaysOutStr) // within next 2 days (inclusive of today)
-      .not("reminder_date", "is", null)
-      .then(({ data }) => {
-        if (data && data.length) {
-          setDueTodayPeople(data);
-          // Browser notification only fires for entries due exactly today
-          const dueToday = data.filter(e => e.reminder_date === todayStr);
-          notifyDueToday(dueToday);
-        } else {
-          setDueTodayPeople([]);
-        }
-      });
+    // from today through 2 days ahead (not in the past), people already settled up left out
+    fetchReminders(session.user.id, todayStr, twoDaysOutStr).then(reminders => {
+      setDueTodayPeople(reminders);
+      // Browser notification only fires for entries due exactly today
+      notifyDueToday(reminders.filter(e => e.reminder_date === todayStr));
+    });
   }, [people, session]);
 
   // Request notification permission
