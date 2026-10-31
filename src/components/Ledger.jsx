@@ -21,6 +21,31 @@ function calcNet(entries) {
   }, 0);
 }
 
+// Totals for the two summary cards. Each person is worked out on their own (the same two
+// numbers the person page shows: "They owe you" and "You owe them"), each clamped at zero
+// per person, and only then added up. One person's overpayment can no longer cancel out
+// what a different person owes.
+function summarizeLedger(entries) {
+  const byPerson = {};
+  entries.filter(e => !e.settled).forEach(e => {
+    if (!byPerson[e.person_id]) byPerson[e.person_id] = [];
+    byPerson[e.person_id].push(e);
+  });
+  let owedToMe = 0, iOwe = 0;
+  Object.values(byPerson).forEach(list => {
+    let they = 0, you = 0;
+    list.forEach(e => {
+      if (e.type === "given")              they += e.amount;
+      else if (e.type === "received_back") they -= e.amount;
+      else if (e.type === "borrowed")      you  += e.amount;
+      else if (e.type === "returned")      you  -= e.amount;
+    });
+    owedToMe += Math.max(0, they);
+    iOwe     += Math.max(0, you);
+  });
+  return { owedToMe: Math.round(owedToMe * 100) / 100, iOwe: Math.round(iOwe * 100) / 100 };
+}
+
 // ── Self-contained Entry Row ──
 function EntryRow({ entry, onDelete, today }) {
   const meta      = ENTRY_META[entry.type] || ENTRY_META.given;
@@ -83,17 +108,10 @@ function NetWorthSummary({ session, people }) {
 
   useEffect(() => {
     if (!people.length) return;
-    supabase.from("ledger_entries").select("type,amount,settled").eq("user_id", session.user.id).eq("settled", false)
+    supabase.from("ledger_entries").select("person_id,type,amount,settled").eq("user_id", session.user.id).eq("settled", false)
       .then(({ data }) => {
         if (!data) return;
-        let owedToMe = 0, iOwe = 0;
-        data.forEach(e => {
-          if (e.type === "given")         owedToMe += e.amount;
-          if (e.type === "received_back") owedToMe -= e.amount;
-          if (e.type === "borrowed")      iOwe     += e.amount;
-          if (e.type === "returned")      iOwe     -= e.amount;
-        });
-        setTotals({ owedToMe: Math.max(0, owedToMe), iOwe: Math.max(0, iOwe) });
+        setTotals(summarizeLedger(data));
       });
   }, [people, session]);
 
