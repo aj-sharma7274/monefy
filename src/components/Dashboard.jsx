@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { MONTHS, MONTHS_SHORT, YEARS, fmt, pct } from "../constants";
+import { MONTHS, MONTHS_SHORT, fmt, pct } from "../constants";
+import { isInMonth, dowOf, domOf, yearOptions } from "../utils/dates";
 
 // ── Chart manager ──
 let chartInstances = {};
@@ -51,14 +52,14 @@ function generateInsights(budget, spend, transactions, selMonth, selYear, totalB
     insights.push({ icon: "💚", text: `<strong>${best}</strong> still has <strong>${fmt(budget[best] - (spend[best] || 0))}</strong> left — well under budget.` });
   }
 
-  const monthTxns = transactions.filter(t => { const d = new Date(t.date); return d.getMonth() === selMonth && d.getFullYear() === selYear; });
+  const monthTxns = transactions.filter(t => isInMonth(t.date, selMonth, selYear));
   if (monthTxns.length) {
     const biggest = monthTxns.reduce((a, b) => a.amount > b.amount ? a : b);
     insights.push({ icon: "💸", text: `Biggest expense: <strong>${biggest.description}</strong> — <strong>${fmt(biggest.amount)}</strong> on ${biggest.date}.` });
   }
 
   const dowMap = [0,0,0,0,0,0,0], dowCount = [0,0,0,0,0,0,0];
-  monthTxns.forEach(t => { const d = new Date(t.date).getDay(); dowMap[d] += t.amount; dowCount[d]++; });
+  monthTxns.forEach(t => { const d = dowOf(t.date); dowMap[d] += t.amount; dowCount[d]++; });
   const dowAvg  = dowMap.map((v, i) => dowCount[i] > 0 ? v / dowCount[i] : 0);
   const maxDow  = dowAvg.indexOf(Math.max(...dowAvg));
   const dowNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
@@ -67,7 +68,7 @@ function generateInsights(budget, spend, transactions, selMonth, selYear, totalB
 
   const prevMonth = selMonth === 0 ? 11 : selMonth - 1;
   const prevYear  = selMonth === 0 ? selYear - 1 : selYear;
-  const prevTxns  = transactions.filter(t => { const d = new Date(t.date); return d.getMonth() === prevMonth && d.getFullYear() === prevYear; });
+  const prevTxns  = transactions.filter(t => isInMonth(t.date, prevMonth, prevYear));
   const prevSpent = prevTxns.reduce((s, t) => s + t.amount, 0);
   if (prevSpent > 0 && totalSpent > 0) {
     const diff    = totalSpent - prevSpent;
@@ -82,7 +83,7 @@ function generateInsights(budget, spend, transactions, selMonth, selYear, totalB
 export default function Dashboard({ budget, transactions, selMonth, setSelMonth, selYear, setSelYear }) {
   const [chartsReady, setChartsReady] = useState(false);
 
-  const txns   = transactions.filter(t => { const d = new Date(t.date); return d.getMonth() === selMonth && d.getFullYear() === selYear; });
+  const txns   = transactions.filter(t => isInMonth(t.date, selMonth, selYear));
   const spend  = {};
   txns.forEach(t => { spend[t.category] = (spend[t.category] || 0) + t.amount; });
 
@@ -99,7 +100,7 @@ export default function Dashboard({ budget, transactions, selMonth, setSelMonth,
 
   const prevM      = selMonth === 0 ? 11 : selMonth - 1;
   const prevY      = selMonth === 0 ? selYear - 1 : selYear;
-  const prevSpent  = transactions.filter(t => { const d = new Date(t.date); return d.getMonth() === prevM && d.getFullYear() === prevY; }).reduce((s, t) => s + t.amount, 0);
+  const prevSpent  = transactions.filter(t => isInMonth(t.date, prevM, prevY)).reduce((s, t) => s + t.amount, 0);
   const spentDiff  = prevSpent > 0 ? Math.round(((totalSpent - prevSpent) / prevSpent) * 100) : null;
 
   const recent   = [...txns].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
@@ -146,7 +147,7 @@ export default function Dashboard({ budget, transactions, selMonth, setSelMonth,
     // Chart 3 — Daily spending
     const daysInMonth  = new Date(selYear, selMonth + 1, 0).getDate();
     const dayLabels    = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-    const dayData      = dayLabels.map(d => { const map = {}; txns.forEach(t => { const dd = new Date(t.date).getDate(); map[dd] = (map[dd] || 0) + t.amount; }); return map[d] || 0; });
+    const dayData      = dayLabels.map(d => { const map = {}; txns.forEach(t => { const dd = domOf(t.date); map[dd] = (map[dd] || 0) + t.amount; }); return map[d] || 0; });
     const dailyLimit   = totalBudget / daysInMonth;
     createChart("mf-c3", {
       type: "line",
@@ -159,7 +160,7 @@ export default function Dashboard({ budget, transactions, selMonth, setSelMonth,
 
     // Chart 4 — Day of week
     const dowTotals = [0,0,0,0,0,0,0], dowCounts = [0,0,0,0,0,0,0];
-    txns.forEach(t => { const dow = new Date(t.date).getDay(); dowTotals[dow] += t.amount; dowCounts[dow]++; });
+    txns.forEach(t => { const dow = dowOf(t.date); dowTotals[dow] += t.amount; dowCounts[dow]++; });
     const dowAvg = dowTotals.map((v, i) => dowCounts[i] > 0 ? Math.round(v / dowCounts[i]) : 0);
     const maxDow = Math.max(...dowAvg);
     createChart("mf-c4", {
@@ -170,7 +171,7 @@ export default function Dashboard({ budget, transactions, selMonth, setSelMonth,
 
     // Chart 5 — 6-month trend
     const months6  = Array.from({ length: 6 }, (_, i) => { const d = new Date(selYear, selMonth - 5 + i, 1); return { m: d.getMonth(), y: d.getFullYear(), label: MONTHS_SHORT[d.getMonth()] }; });
-    const m6data   = months6.map(({ m, y }) => transactions.filter(t => { const d = new Date(t.date); return d.getMonth() === m && d.getFullYear() === y; }).reduce((s, t) => s + t.amount, 0));
+    const m6data   = months6.map(({ m, y }) => transactions.filter(t => isInMonth(t.date, m, y)).reduce((s, t) => s + t.amount, 0));
     createChart("mf-c5", {
       type: "line",
       data: { labels: months6.map(x => x.label), datasets: [
@@ -200,7 +201,7 @@ export default function Dashboard({ budget, transactions, selMonth, setSelMonth,
         <h2>Dashboard</h2>
         <div className="mf-filters">
           <select className="mf-sel" value={selMonth} onChange={e => setSelMonth(+e.target.value)}>{MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}</select>
-          <select className="mf-sel" value={selYear}  onChange={e => setSelYear(+e.target.value)}>{YEARS.map(y => <option key={y} value={y}>{y}</option>)}</select>
+          <select className="mf-sel" value={selYear}  onChange={e => setSelYear(+e.target.value)}>{yearOptions(transactions, selYear).map(y => <option key={y} value={y}>{y}</option>)}</select>
         </div>
       </div>
 

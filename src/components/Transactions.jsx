@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
-import { MONTHS, YEARS, fmt } from "../constants";
+import { MONTHS, fmt } from "../constants";
+import { isInMonth, yearOptions } from "../utils/dates";
 import { useConfirm } from "./shared/ConfirmModal";
 
 export default function Transactions({ transactions, onDeleted }) {
@@ -10,7 +11,7 @@ export default function Transactions({ transactions, onDeleted }) {
   const { confirm, modal } = useConfirm();
 
   const txns = transactions
-    .filter(t => { const d = new Date(t.date); return d.getMonth() === m && d.getFullYear() === y; })
+    .filter(t => isInMonth(t.date, m, y))
     .sort((a, b) => b.date.localeCompare(a.date));
 
   const del = async (id) => {
@@ -59,7 +60,7 @@ export default function Transactions({ transactions, onDeleted }) {
             {MONTHS.map((mo, i) => <option key={i} value={i}>{mo}</option>)}
           </select>
           <select className="mf-sel" value={y} onChange={e => setY(+e.target.value)}>
-            {YEARS.map(yr => <option key={yr} value={yr}>{yr}</option>)}
+            {yearOptions(transactions, y).map(yr => <option key={yr} value={yr}>{yr}</option>)}
           </select>
           <button className="mf-btn-g" onClick={exportMonth} disabled={txns.length === 0}>📥 Export Month</button>
           <button className="mf-btn-g" onClick={exportAll} disabled={transactions.length === 0}>📥 Export All</button>

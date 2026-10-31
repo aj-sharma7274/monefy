@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { fmt } from "../constants";
+import { todayISO, addDaysISO, daysBetween } from "../utils/dates";
 import { useConfirm } from "./shared/ConfirmModal";
 
 const ENTRY_META = {
@@ -25,7 +26,7 @@ function EntryRow({ entry, onDelete, today }) {
   const meta      = ENTRY_META[entry.type] || ENTRY_META.given;
   const isDueToday = entry.reminder_date === today && !entry.settled;
   const isUpcoming = entry.reminder_date && entry.reminder_date > today && !entry.settled &&
-    (new Date(entry.reminder_date) - new Date(today)) / 86400000 <= 2;
+    daysBetween(today, entry.reminder_date) <= 2;
   const isPast = entry.reminder_date && entry.reminder_date < today && !entry.settled;
   const [lightbox, setLightbox] = useState(false);
 
@@ -181,7 +182,7 @@ export default function Ledger({ session }) {
   const [eType,     setEType]     = useState("given");
   const [eAmount,   setEAmount]   = useState("");
   const [eNote,     setENote]     = useState("");
-  const [eDate,     setEDate]     = useState(new Date().toISOString().slice(0, 10));
+  const [eDate,     setEDate]     = useState(todayISO());
   const [eReminder, setEReminder] = useState("");
   const [eFile,     setEFile]     = useState(null);
   const [eUploading,setEUploading]= useState(false);
@@ -202,12 +203,8 @@ export default function Ledger({ session }) {
   // Check reminders — banner shows 2 days before through due date, notification only on exact due date
   useEffect(() => {
     if (!people.length) return;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayStr = today.toISOString().slice(0, 10);
-    const twoDaysOut = new Date(today);
-    twoDaysOut.setDate(twoDaysOut.getDate() + 2);
-    const twoDaysOutStr = twoDaysOut.toISOString().slice(0, 10);
+    const todayStr = todayISO();
+    const twoDaysOutStr = addDaysISO(todayStr, 2);
 
     supabase.from("ledger_entries").select("*,ledger_people(name)")
       .eq("user_id", session.user.id)
@@ -395,7 +392,7 @@ export default function Ledger({ session }) {
     card: { background: "#0d1130", border: "1px solid rgba(255,255,255,.07)", borderRadius: 12, padding: "16px 18px" },
     sec:  { background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 14, padding: "18px 22px", marginBottom: 16 },
   };
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
 
   // ── List view ──
   if (view === "list") return (
@@ -407,7 +404,7 @@ export default function Ledger({ session }) {
       </div>
 
       {dueTodayPeople.length > 0 && (() => {
-        const todayStr = new Date().toISOString().slice(0, 10);
+        const todayStr = todayISO();
         const dueToday = dueTodayPeople.filter(e => e.reminder_date === todayStr);
         const upcoming = dueTodayPeople.filter(e => e.reminder_date !== todayStr);
         return (

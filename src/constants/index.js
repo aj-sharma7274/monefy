@@ -1,3 +1,5 @@
+import { defaultYears } from "../utils/dates";
+
 export const MONTHS = [
   "January","February","March","April","May","June",
   "July","August","September","October","November","December"
@@ -6,7 +8,7 @@ export const MONTHS_SHORT = [
   "Jan","Feb","Mar","Apr","May","Jun",
   "Jul","Aug","Sep","Oct","Nov","Dec"
 ];
-export const YEARS = [2024, 2025, 2026, 2027];
+export const YEARS = defaultYears(); // rolls forward: two years back through next year
 
 export const PIE_COLORS = [
   "#00e5cc","#ff4d8d","#ffb830","#00d68f","#a78bfa",

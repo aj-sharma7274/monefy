@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
+import { todayISO } from "../utils/dates";
 
 export default function AddExpense({ budget, onSaved }) {
   const cats = Object.keys(budget);
-  const [date,   setDate]   = useState(new Date().toISOString().slice(0, 10));
+  const [date,   setDate]   = useState(todayISO());
   const [amount, setAmount] = useState("");
   const [desc,   setDesc]   = useState("");
   const [cat,    setCat]    = useState(cats[0] || "");
