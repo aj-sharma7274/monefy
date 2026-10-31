@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { fmt } from "../constants";
 import { todayISO, addDaysISO, daysBetween } from "../utils/dates";
+import { friendlyError } from "../utils/friendlyError";
 import { useConfirm } from "./shared/ConfirmModal";
 
 const ENTRY_META = {
@@ -282,6 +283,8 @@ export default function Ledger({ session }) {
   const [eFile,     setEFile]     = useState(null);
   const [eUploading,setEUploading]= useState(false);
   const [eMsg,      setEMsg]      = useState(null);
+  const [notice,    setNotice]    = useState(null);   // message at the top of the list / person page
+  const [removing,  setRemoving]  = useState(false);
 
   const loadPeople = useCallback(async () => {
     const { data } = await supabase.from("ledger_people").select("*").eq("user_id", session.user.id).order("name");
@@ -321,23 +324,32 @@ export default function Ledger({ session }) {
     setPSaving(true);
     const { error } = await supabase.from("ledger_people").insert({ user_id: session.user.id, name: pName.trim(), phone: pPhone.trim() || null, notes: pNotes.trim() || null });
     setPSaving(false);
-    if (error) { setPMsg({ t: "err", m: "Error saving." }); return; }
+    if (error) { setPMsg({ t: "err", m: friendlyError(error, "Couldn't save this person. Please try again.") }); return; }
     setPMsg({ t: "ok", m: "Person added! ✓" });
     setPName(""); setPPhone(""); setPNotes("");
     loadPeople();
     setTimeout(() => { setPMsg(null); setView("list"); }, 1200);
   };
 
+  // Removing a person MOVES them (and all their entries) to the archive in one all-or-nothing step.
+  // Nothing is erased, so they can be recovered later. See archive_ledger_person in the database.
   const deletePerson = async (id) => {
-    const ok = await confirm({ icon: "👤", title: "Remove Person", message: "This will delete all entries for this person too.", confirmLabel: "Remove" });
+    if (removing) return;
+    const person = people.find(p => p.id === id) || selPerson;
+    const name = person?.name || "this person";
+    const ok = await confirm({ icon: "👤", title: "Remove Person", message: `Remove ${name}? Their entries are moved to the archive, not erased, so they can be recovered later.`, confirmLabel: "Remove" });
     if (!ok) return;
-    await supabase.from("ledger_entries").delete().eq("person_id", id);
-    await supabase.from("ledger_people").delete().eq("id", id);
+    setRemoving(true); setNotice(null);
+    const { error } = await supabase.rpc("archive_ledger_person", { p_person_id: id });
+    setRemoving(false);
+    if (error) { setNotice({ t: "err", m: friendlyError(error, "Couldn't remove this person. Nothing was changed. Please try again.") }); return; }
     loadPeople(); setView("list");
+    setNotice({ t: "ok", m: `${name} was moved to the archive.` });
+    setTimeout(() => setNotice(null), 5000);
   };
 
   const openPerson = async (p) => {
-    setSelPerson(p); setView("person"); await loadEntries(p.id);
+    setNotice(null); setSelPerson(p); setView("person"); await loadEntries(p.id);
   };
 
   const saveEntry = async () => {
@@ -350,7 +362,7 @@ export default function Ledger({ session }) {
       const { error: upErr } = await supabase.storage.from("ledger-attachments").upload(path, eFile, { upsert: true });
       if (upErr) {
         setEUploading(false);
-        setEMsg({ t: "err", m: `Attachment upload failed: ${upErr.message}` });
+        setEMsg({ t: "err", m: friendlyError(upErr, "Couldn't upload the attachment. Please try again, or save the entry without it.") });
         return;
       }
       const { data } = supabase.storage.from("ledger-attachments").getPublicUrl(path);
@@ -362,7 +374,7 @@ export default function Ledger({ session }) {
       date: eDate, reminder_date: eReminder || null, attachment_url, settled: false,
     });
     setEUploading(false);
-    if (error) { setEMsg({ t: "err", m: "Error saving." }); return; }
+    if (error) { setEMsg({ t: "err", m: friendlyError(error, "Couldn't save this entry. Please try again.") }); return; }
     setEMsg({ t: "ok", m: "Entry saved! ✓" });
     setEAmount(""); setENote(""); setEReminder(""); setEFile(null);
     loadEntries(selPerson.id);
@@ -372,7 +384,9 @@ export default function Ledger({ session }) {
   const deleteEntry = async (id) => {
     const ok = await confirm({ icon: "🗑️", title: "Delete Entry", message: "This entry will be permanently removed.", confirmLabel: "Delete" });
     if (!ok) return;
-    await supabase.from("ledger_entries").delete().eq("id", id);
+    const { error } = await supabase.from("ledger_entries").delete().eq("id", id);
+    if (error) { setNotice({ t: "err", m: friendlyError(error, "Couldn't delete this entry. Please try again.") }); return; }
+    setNotice(null);
     loadEntries(selPerson.id);
   };
 
@@ -441,7 +455,7 @@ export default function Ledger({ session }) {
       doc.save(`Monefy_Ledger_${selPerson.name.replace(/\s+/g, "_")}.pdf`);
     };
 
-    run().catch(err => { console.error("PDF export failed:", err); alert("PDF export failed. Check console for details."); });
+    run().catch(err => { console.error("PDF export failed:", err); alert("Couldn't create the PDF. Please check your internet connection and try again."); });
   };
 
   const exportEntries = () => {
@@ -506,6 +520,7 @@ export default function Ledger({ session }) {
         );
       })()}
 
+      {notice && <div className={notice.t === "ok" ? "mf-msg-ok" : "mf-msg-err"} style={{ marginBottom: 14 }}>{notice.m}</div>}
       <NetWorthSummary session={session} people={people} />
 
       {people.length === 0
@@ -608,8 +623,9 @@ export default function Ledger({ session }) {
     return (
       <div>
         {modal}
-        <div className="mf-back-btn" onClick={() => { setView("list"); loadPeople(); }}>← Back to Ledger</div>
+        <div className="mf-back-btn" onClick={() => { setNotice(null); setView("list"); loadPeople(); }}>← Back to Ledger</div>
 
+        {notice && <div className={notice.t === "ok" ? "mf-msg-ok" : "mf-msg-err"} style={{ marginBottom: 14 }}>{notice.m}</div>}
         {/* Person header */}
         <div style={{ ...CC.card, marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -626,7 +642,7 @@ export default function Ledger({ session }) {
             <button className="mf-btn-p" onClick={() => setView("add_entry")}>+ Add Entry</button>
             <button className="mf-btn-g" onClick={exportEntries} disabled={entries.length === 0}>📥 Export CSV</button>
             <button className="mf-btn-g" onClick={exportPDF} disabled={entries.length === 0}>📄 Export PDF</button>
-            <button className="mf-btn-d" onClick={() => deletePerson(selPerson.id)}>Remove</button>
+            <button className="mf-btn-d" onClick={() => deletePerson(selPerson.id)} disabled={removing}>Remove</button>
           </div>
         </div>
 
