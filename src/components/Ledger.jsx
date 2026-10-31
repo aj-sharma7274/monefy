@@ -46,6 +46,41 @@ function summarizeLedger(entries) {
   return { owedToMe: Math.round(owedToMe * 100) / 100, iOwe: Math.round(iOwe * 100) / 100 };
 }
 
+// Browser reminder pop-ups. Safe on every device: does nothing where notifications are not
+// supported (e.g. iPhone Safari), never throws (some Android browsers refuse `new Notification`),
+// and shows each reminder at most once per day, so reopening the Ledger does not repeat it.
+function notifyDueToday(entries) {
+  try {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission !== "granted" || !entries.length) return;
+
+    const key = "monefy_notified_" + todayISO();
+    let shown = [];
+    try {
+      shown = JSON.parse(localStorage.getItem(key) || "[]");
+      const old = [];  // forget the lists kept for earlier days
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("monefy_notified_") && k !== key) old.push(k);
+      }
+      old.forEach(k => localStorage.removeItem(k));
+    } catch (err) { shown = []; }
+
+    entries.forEach(e => {
+      if (shown.includes(e.id)) return;
+      try {
+        new Notification("Monefy Reminder 💰", {
+          body: `${e.ledger_people?.name || "Someone"} — ${fmt(e.amount)} is due today!`,
+          icon: "/favicon.ico",
+        });
+        shown.push(e.id);
+      } catch (err) { /* this browser does not allow it; the banner on the page still shows */ }
+    });
+
+    try { localStorage.setItem(key, JSON.stringify(shown)); } catch (err) { /* storage unavailable */ }
+  } catch (err) { /* never let a notification problem break the Ledger page */ }
+}
+
 // ── Self-contained Entry Row ──
 function EntryRow({ entry, onDelete, today }) {
   const meta      = ENTRY_META[entry.type] || ENTRY_META.given;
@@ -242,12 +277,7 @@ export default function Ledger({ session }) {
           setDueTodayPeople(data);
           // Browser notification only fires for entries due exactly today
           const dueToday = data.filter(e => e.reminder_date === todayStr);
-          if (dueToday.length && Notification.permission === "granted") {
-            dueToday.forEach(e => new Notification("Monefy Reminder 💰", {
-              body: `${e.ledger_people?.name || "Someone"} — ${fmt(e.amount)} is due today!`,
-              icon: "/favicon.ico"
-            }));
-          }
+          notifyDueToday(dueToday);
         } else {
           setDueTodayPeople([]);
         }
@@ -256,7 +286,9 @@ export default function Ledger({ session }) {
 
   // Request notification permission
   useEffect(() => {
-    if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
+    try {
+      if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
+    } catch (err) { /* not supported on this device */ }
   }, []);
 
   const savePerson = async () => {
